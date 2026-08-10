@@ -17,8 +17,8 @@ export class Menus {
     this.element.className = 'menu';
     this.element.innerHTML = `
       <div class="menu__card" role="dialog" aria-modal="true" aria-labelledby="menu-title">
-        <p class="menu__eyebrow" id="menu-eyebrow">Ocean</p>
-        <h1 class="menu__title" id="menu-title">Surf</h1>
+        <p class="menu__eyebrow" id="menu-eyebrow" hidden></p>
+        <h1 class="menu__title" id="menu-title">Ocean Surf</h1>
         <p class="menu__lede" id="menu-lede"></p>
         <dl class="menu__stats" id="menu-stats" hidden></dl>
         <div class="menu__actions" id="menu-actions"></div>
@@ -53,6 +53,17 @@ export class Menus {
     return button;
   }
 
+  /**
+   * Sets the heading. The eyebrow is a label above the title — "Paused", "Run
+   * over" — and hides itself when a screen has nothing to put there, so the
+   * card's flex gap doesn't leave a hole where it would have been.
+   */
+  _setHeading(eyebrow, title) {
+    this._eyebrow.textContent = eyebrow;
+    this._eyebrow.hidden = !eyebrow;
+    this._title.textContent = title;
+  }
+
   _stat(term, value) {
     const wrap = document.createElement('div');
     wrap.className = 'menu__stat';
@@ -74,8 +85,9 @@ export class Menus {
     if (state === State.PLAYING) return;
 
     if (state === State.MENU) {
-      this._eyebrow.textContent = 'Ocean';
-      this._title.textContent = 'Surf';
+      // The game's name is one thing, set as one heading, rather than split
+      // across the eyebrow and the title at two different sizes.
+      this._setHeading('', 'Ocean Surf');
       this._lede.textContent =
         'Catch a wave, hold the pocket, and stay there. The wave is what makes you fast — the paddle only gets you onto it.';
       this._actions.append(
@@ -89,8 +101,7 @@ export class Menus {
     }
 
     if (state === State.PAUSED) {
-      this._eyebrow.textContent = 'Paused';
-      this._title.textContent = 'Take a breath';
+      this._setHeading('Paused', 'Take a breath');
       this._lede.textContent = 'The sea will wait.';
       this._actions.append(
         this._button('Resume', () => handlers.onResume?.(), true),
@@ -103,8 +114,7 @@ export class Menus {
 
     // Results.
     const best = results?.bestTrick;
-    this._eyebrow.textContent = 'Run over';
-    this._title.textContent = formatScore(results?.score ?? 0);
+    this._setHeading('Run over', formatScore(results?.score ?? 0));
     const article = best && /^[aeiou]/i.test(best.name) ? 'an' : 'a';
     this._lede.textContent = best
       ? `Your best was ${article} ${best.name.toLowerCase()} for ${formatScore(best.points)}.`

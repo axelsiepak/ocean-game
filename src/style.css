@@ -379,6 +379,10 @@ body {
   text-align: center;
 }
 
+.menu__eyebrow[hidden] {
+  display: none;
+}
+
 .menu__eyebrow {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
