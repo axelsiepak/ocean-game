@@ -11,6 +11,33 @@ import { detectWebGL, showFatalError } from './utils/fatal.js';
 import { createComposer } from './utils/postprocessing.js';
 import { capPixelRatio, createRenderer, handleResize } from './utils/renderer.js';
 
+const VOLUME_KEY = 'ocean-surf.volume';
+
+/**
+ * The volume setting outlives the tab.
+ *
+ * Both wrapped because storage is not merely absent when it's unavailable — it
+ * throws on access, which a single-file build opened straight off disk or a
+ * browser with site data blocked will do. A lost setting is not worth a crash.
+ */
+function loadVolume() {
+  try {
+    const stored = localStorage.getItem(VOLUME_KEY);
+    const value = Number(stored);
+    return stored !== null && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveVolume(value) {
+  try {
+    localStorage.setItem(VOLUME_KEY, String(value));
+  } catch {
+    // Nothing to do — the game plays fine, it just won't remember.
+  }
+}
+
 /**
  * Builds the world and starts it running. Returns the teardown.
  *
@@ -72,6 +99,8 @@ function boot() {
   });
 
   const menus = new Menus({
+    onVolume: (value) => world.audio.setVolume(value),
+    getVolume: () => world.audio.volume,
     onStart: ({ timed }) => {
       world.reset();
       run.begin({ timed });
@@ -86,6 +115,16 @@ function boot() {
     onFinish: () => run.finish(world.scoring),
     onMenu: () => run.toMenu(),
   });
+
+  // One place to react to the volume moving, whichever moved it — the slider,
+  // the M key, or the stored setting being applied at boot.
+  world.audio.onVolumeChange = (value) => {
+    saveVolume(value);
+    menus.syncVolume();
+  };
+
+  const stored = loadVolume();
+  if (stored !== null) world.audio.setVolume(stored);
 
   // Esc and P pause; the on-screen button covers devices without either.
   const onKeyDown = (event) => {

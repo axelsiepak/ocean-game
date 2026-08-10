@@ -13,6 +13,8 @@
 export class AudioEngine {
   constructor(options = {}) {
     this.masterVolume = options.masterVolume ?? 0.6;
+    /** Where M returns to when the slider was dragged all the way down. */
+    this._lastAudible = this.masterVolume || 0.6;
     this.muteKey = options.muteKey ?? 'KeyM';
 
     /** Speed at which the whoosh starts and where it tops out, m/s. */
@@ -85,7 +87,7 @@ export class AudioEngine {
     const context = this.context;
 
     const master = context.createGain();
-    master.gain.value = this.muted ? 0 : this.masterVolume;
+    master.gain.value = this.volume;
     master.connect(context.destination);
 
     // Long buffers so the loop point never becomes audible as a rhythm.
@@ -154,17 +156,44 @@ export class AudioEngine {
     this.ready = true;
   }
 
+  /** What the player actually hears, with mute folded in. 0..1. */
+  get volume() {
+    return this.muted ? 0 : this.masterVolume;
+  }
+
   toggleMute() {
-    this.setMuted(!this.muted);
+    // Unmuting has to give something back. Without this, M on a slider dragged
+    // to nothing clears the mute flag and stays silent, which reads as broken.
+    if (this.muted && this.masterVolume === 0) this.setVolume(this._lastAudible);
+    else this.setMuted(!this.muted);
   }
 
   setMuted(muted) {
     this.muted = muted;
+    this._applyVolume();
+  }
+
+  /**
+   * Sets the master volume, 0..1. Zero *is* mute rather than a separate state:
+   * one control and one mental model, so a slider at the bottom and the M key
+   * can't disagree about whether the game is silent.
+   */
+  setVolume(volume) {
+    this.masterVolume = Math.min(1, Math.max(0, volume));
+    if (this.masterVolume > 0) this._lastAudible = this.masterVolume;
+    this.muted = this.masterVolume === 0;
+    this._applyVolume();
+  }
+
+  _applyVolume() {
+    // Announced even before the context exists, so a UI showing the volume
+    // stays right when M is pressed before the first sound has been made.
+    this.onVolumeChange?.(this.volume);
     if (!this.ready) return;
 
     // Ramped, never assigned: a gain that jumps to zero clicks.
     const { master } = this._nodes;
-    master.gain.setTargetAtTime(muted ? 0 : this.masterVolume, this.context.currentTime, 0.05);
+    master.gain.setTargetAtTime(this.volume, this.context.currentTime, 0.05);
   }
 
   /** One-off splash. `amount` scales both loudness and length. */

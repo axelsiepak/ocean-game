@@ -22,6 +22,11 @@ export class Menus {
         <p class="menu__lede" id="menu-lede"></p>
         <dl class="menu__stats" id="menu-stats" hidden></dl>
         <div class="menu__actions" id="menu-actions"></div>
+        <label class="menu__volume">
+          <span>Volume</span>
+          <input type="range" id="menu-volume" min="0" max="1" step="0.05" />
+          <output id="menu-volume-value"></output>
+        </label>
         <p class="menu__hint" id="menu-hint"></p>
       </div>
     `;
@@ -32,6 +37,16 @@ export class Menus {
     this._stats = this.element.querySelector('#menu-stats');
     this._actions = this.element.querySelector('#menu-actions');
     this._hint = this.element.querySelector('#menu-hint');
+    this._volume = this.element.querySelector('#menu-volume');
+    this._volumeValue = this.element.querySelector('#menu-volume-value');
+
+    this._volume.addEventListener('input', () => {
+      this.handlers.onVolume?.(Number(this._volume.value));
+      // Read back through the getter rather than trusting the slider: the
+      // engine clamps, and zero there means muted, so the readout should show
+      // what actually took effect.
+      this.syncVolume();
+    });
 
     // A pause control that works without a keyboard.
     this.pauseButton = document.createElement('button');
@@ -51,6 +66,17 @@ export class Menus {
     button.textContent = label;
     button.addEventListener('click', action);
     return button;
+  }
+
+  /**
+   * Puts the slider where the volume actually is. Called whenever a menu opens
+   * and whenever the engine reports a change, so muting with M mid-run leaves
+   * the slider agreeing with what you can hear.
+   */
+  syncVolume() {
+    const volume = this.handlers.getVolume?.() ?? 0;
+    this._volume.value = String(volume);
+    this._volumeValue.textContent = volume === 0 ? 'Muted' : `${Math.round(volume * 100)}%`;
   }
 
   /**
@@ -83,6 +109,8 @@ export class Menus {
     document.body.dataset.state = state;
 
     if (state === State.PLAYING) return;
+
+    this.syncVolume();
 
     if (state === State.MENU) {
       // The game's name is one thing, set as one heading, rather than split

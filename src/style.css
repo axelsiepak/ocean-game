@@ -482,6 +482,34 @@ body {
   border-color: #ff9f5a;
 }
 
+.menu__volume {
+  display: grid;
+  grid-template-columns: auto 1fr 3.6em;
+  align-items: center;
+  gap: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.menu__volume input[type='range'] {
+  width: 100%;
+  /* Taller than the track needs, so the grab area clears a thumb on a phone. */
+  height: 26px;
+  margin: 0;
+  accent-color: #ff9f5a;
+  cursor: pointer;
+}
+
+.menu__volume output {
+  text-align: right;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.82);
+  font-variant-numeric: tabular-nums;
+}
+
 .menu__hint {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
