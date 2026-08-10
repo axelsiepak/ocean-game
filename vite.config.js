@@ -15,6 +15,6 @@ export default defineConfig({
     sourcemap: true,
     // One chunk keeps deployment to two files, and makes the single-file
     // inlining step below trivial.
-    rollupOptions: { output: { inlineDynamicImports: true } },
+    rolldownOptions: { output: { codeSplitting: false } },
   },
 });
