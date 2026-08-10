@@ -32,13 +32,37 @@ export class Surfer {
 
     this._crouch = 0;
     this._lean = 0;
+    this._opacity = 1;
+    this._materials = [];
     this._build();
+  }
+
+  /**
+   * Fades the rider out. The POV camera sits where the head is, so from on
+   * board the rider is either invisible or a torso filling the screen — but the
+   * switch is a cross-fade, and a body vanishing while the camera is still
+   * behind it would pop, hence a fade rather than a flag.
+   *
+   * At 0 the group is hidden outright, which takes its shadow with it — an
+   * invisible rider casting one onto the deck would give the game away.
+   */
+  setOpacity(value) {
+    const amount = THREE.MathUtils.clamp(value, 0, 1);
+    if (amount === this._opacity) return;
+    this._opacity = amount;
+
+    this.group.visible = amount > 0.01;
+    for (const material of this._materials) {
+      material.transparent = amount < 1;
+      material.opacity = amount;
+    }
   }
 
   _build() {
     const wetsuit = new THREE.MeshStandardMaterial({ color: 0x1d2733, roughness: 0.72 });
     const accent = new THREE.MeshStandardMaterial({ color: 0x2f7fa8, roughness: 0.6 });
     const skin = new THREE.MeshStandardMaterial({ color: 0xc98d64, roughness: 0.85 });
+    this._materials.push(wetsuit, accent, skin);
 
     const parts = [];
     const limb = (radius, length) => new THREE.CapsuleGeometry(radius, length, 3, 6);

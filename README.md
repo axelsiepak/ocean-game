@@ -17,7 +17,7 @@ you can open it from another device on the same network.
 
 **Controls:** `W` / `↑` paddle, `S` / `↓` drag a foot to slow, `A` `D` / `←` `→`
 steer and carve, `Space` throws a trick. `C` switches between chase cam and
-surfer POV, `M` mutes, drag anywhere to look around, `H` toggles the ocean panel.
+a fixed surfer POV (the rider fades out of the way), `M` mutes, drag anywhere to look around, `H` toggles the ocean panel.
 
 ## Hosting it
 

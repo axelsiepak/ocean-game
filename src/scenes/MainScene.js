@@ -275,6 +275,13 @@ export class MainScene {
       THREE.MathUtils.clamp((this.surfboard.carve - 4.0) / 2.5, 0, 1) * 0.58,
     );
     this.cameraRig.update(delta);
+
+    // The rider goes with the camera: POV puts the eye at head height on the
+    // deck, so the mannequin would be the view. Keyed off the blend rather than
+    // the mode, and deliberately early in it — the fade runs between 8.6 m and
+    // 5.6 m of camera distance, where the rider is 8-12 degrees of a 60 degree
+    // view. Fading it later means dissolving a body across half the screen.
+    this.surfer.setOpacity(1 - THREE.MathUtils.smoothstep(this.cameraRig.povWeight, 0.05, 0.4));
     this.scoring.update(delta, this.surfboard);
     this.audio.update(delta, this.surfboard);
     this.hud.update(this.surfboard, this.scoring, this.audio);

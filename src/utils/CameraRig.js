@@ -67,6 +67,12 @@ export class CameraRig {
       // Near-rigid: a POV that lagged would feel like being towed, not riding.
       positionRate: 40,
       rotationRate: 22,
+      /**
+       * Fixed to the board: no smoothing at all once the blend is fully POV, so
+       * the view is bolted to the deck rather than trailing it by a frame or
+       * two. Ramped in with the blend, so the switch itself stays a cross-fade.
+       */
+      rigid: true,
       ...options.pov,
     };
 
@@ -167,6 +173,11 @@ export class CameraRig {
     window.addEventListener('pointermove', this._onPointerMove);
     window.addEventListener('pointerup', this._onPointerUp);
     window.addEventListener('keydown', this._onKeyDown);
+  }
+
+  /** How far the rig is into the POV pose, 0..1. Chase at 0, first-person at 1. */
+  get povWeight() {
+    return this._blend;
   }
 
   toggle() {
@@ -291,12 +302,18 @@ export class CameraRig {
       if (this._eye.y < floor) this._eye.y = floor;
     }
 
-    // Frame-rate independent smoothing on both position and orientation.
-    this._basePosition.lerp(this._eye, 1 - Math.exp(-rates.position * delta));
+    // Frame-rate independent smoothing on both position and orientation. In POV
+    // the blend doubles as a floor on that response: at 1 the factor is 1, which
+    // is a snap to the computed pose — fixed to the board, no lag. Taking the
+    // larger of the two keeps it monotone through the switch, so the camera
+    // never loosens off on the way in.
+    const rigid = this.pov.rigid ? this._blend : 0;
+
+    this._basePosition.lerp(this._eye, Math.max(1 - Math.exp(-rates.position * delta), rigid));
 
     this._lookMatrix.lookAt(this._basePosition, this._focus, this._up);
     this._targetQuat.setFromRotationMatrix(this._lookMatrix);
-    this._baseQuat.slerp(this._targetQuat, 1 - Math.exp(-rates.rotation * delta));
+    this._baseQuat.slerp(this._targetQuat, Math.max(1 - Math.exp(-rates.rotation * delta), rigid));
 
     this.camera.position.copy(this._basePosition);
     this.camera.quaternion.copy(this._baseQuat);

@@ -389,10 +389,25 @@ it swings through turns rather than tracking rigidly. It's clamped above the
 water via a `getMinHeight` callback — the ocean is opaque, so a camera that dipped
 into a trough would black out the screen.
 
-**POV** rides just behind the nose at about head height, near-rigidly (40/s), and
-inherits a fraction of the board's pitch and lean — 40% of the bank rolls the
-horizon, which is most of what sells a carve from on board. A surfer's head stays
-far more level than the deck, so taking all of it would be sickening.
+**POV** rides just behind the nose at about head height and inherits a fraction
+of the board's pitch and lean — 40% of the bank rolls the horizon, which is most
+of what sells a carve from on board. A surfer's head stays far more level than
+the deck, so taking all of it would be sickening.
+
+It is **fixed to the board**: `pov.rigid` uses the blend itself as a floor on the
+smoothing factor, so at full POV the factor is 1 and the camera snaps to its
+computed pose rather than damping toward it. Measured over 10 s of hard carving,
+lag falls from 4.2 cm (peak 7.6) to 5e-8 m — a rounding error. Because the floor
+ramps in with the blend, the switch is still a cross-fade, and chase is untouched
+(1.640 m of lag either way, to the millimetre).
+
+**The rider goes with it.** The POV eye sits where the surfer's head is, so
+leaving the mannequin in place means riding inside a torso. `Surfer.setOpacity()`
+fades it, and `MainScene` drives that from the blend rather than the mode: the
+fade runs between 8.6 m and 5.6 m of camera distance, where the rider is 8–12° of
+a 60° view. Later in the blend it would be dissolving a body across half the
+screen — at blend 0.9 the rider spans 42°. At zero the group is hidden outright,
+which takes its shadow with it.
 
 Rotation is **slerped toward a look-at basis** rather than snapped with `lookAt()`
 every frame. That's what produces the lag through a turn (measured: peaks around
