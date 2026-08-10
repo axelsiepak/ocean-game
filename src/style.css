@@ -568,3 +568,65 @@ body:not([data-state='playing']) .control-panel {
 .stats[hidden] {
   display: none;
 }
+
+/* The panel that replaces a black screen when the game can't start. Sits above
+   the menu overlay: if both somehow exist, this is the one worth reading. */
+.fatal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 42%, rgba(6, 20, 32, 0.55), rgba(3, 10, 17, 0.92));
+  z-index: 30;
+}
+
+.fatal__card {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 30px 30px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(10, 24, 34, 0.9);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.fatal__title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(22px, 5vw, 28px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.fatal__lede {
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* Selectable on purpose — the whole point of showing a stack is that someone
+   can copy it into a bug report or a search box. */
+.fatal__detail {
+  max-height: 40vh;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.42);
+  color: rgba(255, 210, 180, 0.92);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.fatal__hint {
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+}
