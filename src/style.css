@@ -1,0 +1,570 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b1a2a;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hud-score {
+  position: fixed;
+  left: 14px;
+  top: 12px;
+  width: 200px;
+  color: rgba(255, 255, 255, 0.94);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.hud-score__value {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-combo {
+  margin-top: 6px;
+}
+
+.hud-combo[hidden],
+.hud-trick[hidden] {
+  display: none;
+}
+
+.hud-combo__multiplier {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffc65c;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-combo__bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 198, 92, 0.25);
+  overflow: hidden;
+}
+
+.hud-combo__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #ffc65c;
+  transition: width 90ms linear;
+}
+
+.hud-trick {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 8px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.hud-trick__name {
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.hud-trick__points {
+  color: #7de3b4;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-muted {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.hud-muted[hidden] {
+  display: none;
+}
+
+.hud-readout {
+  position: fixed;
+  left: 12px;
+  bottom: 46px;
+  width: 190px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.hud-readout__speed {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.hud-readout__value {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: color 160ms ease;
+}
+
+.hud-readout__unit {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.hud-meter {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.hud-meter__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #6fd3e8;
+  transition:
+    width 90ms linear,
+    background-color 160ms ease;
+}
+
+/* Tick marking the speed above which a hard carve washes you out. */
+.hud-meter__mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.hud-readout.is-fast .hud-readout__value {
+  color: #ffc65c;
+}
+
+.hud-readout.is-fast .hud-meter__fill {
+  background: #ffc65c;
+}
+
+.hud-readout.is-down .hud-readout__value,
+.hud-readout.is-down .hud-meter__fill {
+  color: #ff7a6b;
+  background: #ff7a6b;
+}
+
+.hud-pocket {
+  margin-top: 8px;
+}
+
+.hud-pocket[hidden] {
+  display: none;
+}
+
+.hud-pocket__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #7de3b4;
+}
+
+.hud-pocket__bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(125, 227, 180, 0.22);
+  overflow: hidden;
+}
+
+.hud-pocket__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #7de3b4;
+  transition: width 90ms linear;
+}
+
+.hud-pocket.is-barrel .hud-pocket__label {
+  color: #9db8ff;
+}
+
+.hud-pocket.is-barrel .hud-pocket__bar {
+  background: rgba(157, 184, 255, 0.22);
+}
+
+.hud-pocket.is-barrel .hud-pocket__fill {
+  background: #9db8ff;
+}
+
+.hud-status {
+  margin-top: 8px;
+}
+
+.hud-status[hidden] {
+  display: none;
+}
+
+.hud-status__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ff7a6b;
+}
+
+.hud-status__bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 122, 107, 0.25);
+  overflow: hidden;
+}
+
+.hud-status__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #ff7a6b;
+  transition: width 90ms linear;
+}
+
+.control-panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 208px;
+  padding: 12px 14px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(6, 20, 32, 0.62);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  user-select: none;
+}
+
+.control-panel[hidden] {
+  display: none;
+}
+
+.control-panel h2 {
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.control-panel__row {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.control-panel__head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.control-panel__head output {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+.control-panel input[type='range'] {
+  width: 100%;
+  height: 3px;
+  accent-color: #6fd3e8;
+  cursor: pointer;
+}
+
+.control-panel__hint {
+  margin-top: 10px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.4;
+}
+
+#hud {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* --- Run clock ------------------------------------------------------------ */
+.hud-clock {
+  margin-top: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.hud-clock[hidden] {
+  display: none;
+}
+
+.hud-clock.is-low {
+  color: #ff9f5a;
+  opacity: 1;
+}
+
+/* --- Menus ---------------------------------------------------------------- */
+.menu {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 42%, rgba(6, 20, 32, 0.55), rgba(3, 10, 17, 0.88));
+  backdrop-filter: blur(6px);
+  z-index: 20;
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+.menu__card {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 30px 30px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(10, 24, 34, 0.82);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.menu__eyebrow {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #ff9f5a;
+}
+
+.menu__title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(34px, 9vw, 48px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu__lede {
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.66);
+  text-wrap: balance;
+}
+
+.menu__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0;
+  text-align: left;
+}
+
+.menu__stats[hidden] {
+  display: none;
+}
+
+.menu__stat {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.menu__stat dt {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.menu__stat dd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu__stat:first-child {
+  grid-column: 1 / -1;
+}
+
+.menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 4px;
+}
+
+.menu__button {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  /* Comfortably past the 44px minimum touch target. */
+  min-height: 48px;
+  padding: 0 18px;
+  cursor: pointer;
+}
+
+.menu__button:hover {
+  border-color: #ff9f5a;
+}
+
+.menu__button:focus-visible {
+  outline: 2px solid #ff9f5a;
+  outline-offset: 3px;
+}
+
+.menu__button--primary {
+  color: #10222f;
+  background: #ff9f5a;
+  border-color: #ff9f5a;
+}
+
+.menu__hint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.menu__hint:empty {
+  display: none;
+}
+
+.pause-button {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 15;
+  min-height: 44px;
+  padding: 0 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(6, 20, 32, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.pause-button[hidden] {
+  display: none;
+}
+
+.pause-button:focus-visible {
+  outline: 2px solid #ff9f5a;
+  outline-offset: 2px;
+}
+
+/* The playfield furniture only belongs on screen while surfing. */
+body:not([data-state='playing']) .hud-score,
+body:not([data-state='playing']) .hud-readout,
+body:not([data-state='playing']) #hud,
+body:not([data-state='playing']) .control-panel {
+  display: none;
+}
+
+/* --- Small screens -------------------------------------------------------- */
+@media (max-width: 640px) {
+  .hud-score { width: 150px; left: 12px; top: 10px; }
+  .hud-score__value { font-size: 26px; }
+  .hud-readout { width: 150px; bottom: 40px; }
+  .hud-readout__value { font-size: 24px; }
+  #hud { font-size: 11px; padding: 5px 8px; max-width: calc(100vw - 24px); }
+  .control-panel { display: none; }
+  .menu__card { padding: 24px 20px 22px; }
+  .menu__stats { grid-template-columns: 1fr; }
+  /* The pause control sits opposite the score, clear of both thumbs. */
+  .pause-button { top: 10px; right: 10px; }
+}
+
+@media (max-height: 460px) {
+  .menu__card { gap: 10px; padding: 18px 22px; }
+  .menu__lede { display: none; }
+  .menu__button { min-height: 42px; }
+}
+
+.stats {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 18;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(6, 20, 32, 0.72);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+}
+
+.stats[hidden] {
+  display: none;
+}

@@ -1,0 +1,15 @@
+# Netlify picks these up automatically when you connect the repo, so there's
+# nothing to fill in on their setup screen.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Single-page app: the game is one document, so send everything to it rather
+# than serving a 404 on a stray path.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

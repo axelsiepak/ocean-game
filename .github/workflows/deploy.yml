@@ -1,0 +1,46 @@
+# Publishes the game to GitHub Pages.
+#
+# Manual trigger only, because Netlify is deploying this repo — left on `push`
+# it would run alongside every Netlify build and fail with a red X until Pages
+# was configured too. Run it from the Actions tab if you ever want a second
+# copy on Pages; first set Settings -> Pages -> Source: "GitHub Actions".
+#
+# `base: './'` in vite.config.js means the build works from a project subpath
+# without knowing the repository name.
+name: Deploy to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
