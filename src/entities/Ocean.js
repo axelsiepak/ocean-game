@@ -25,6 +25,7 @@ const vertexShader = /* glsl */ `
   uniform float uTime;
   uniform vec2 uOffset;
   uniform vec4 uWaves[NUM_WAVES];
+  uniform float uWaveScale[NUM_WAVES];
   uniform float uWaveHeight;
   uniform float uChoppiness;
   uniform float uFoamAmount;
@@ -78,8 +79,8 @@ const vertexShader = /* glsl */ `
    * the normal, and the determinant of their horizontal part tells us how much
    * the surface is being pinched together (see the Jacobian below).
    */
-  vec3 gerstnerWave(vec4 wave, vec2 p, float steepMul, float chopMul, inout vec3 tangent, inout vec3 binormal) {
-    float steepness = wave.z * uWaveHeight * steepMul;
+  vec3 gerstnerWave(vec4 wave, float scale, vec2 p, float steepMul, float chopMul, inout vec3 tangent, inout vec3 binormal) {
+    float steepness = wave.z * scale * steepMul;
     float wavelength = wave.w;
 
     float k = ${TWO_PI.toFixed(8)} / wavelength;
@@ -134,8 +135,8 @@ const vertexShader = /* glsl */ `
     float totalAmplitude = 0.0;
 
     for (int i = 0; i < NUM_WAVES; i++) {
-      displaced += gerstnerWave(uWaves[i], origin, steepMul, chopMul, tangent, binormal);
-      totalAmplitude += (uWaves[i].z * uWaveHeight * steepMul) * uWaves[i].w / ${TWO_PI.toFixed(8)};
+      displaced += gerstnerWave(uWaves[i], uWaveScale[i], origin, steepMul, chopMul, tangent, binormal);
+      totalAmplitude += (uWaves[i].z * uWaveScale[i] * steepMul) * uWaves[i].w / ${TWO_PI.toFixed(8)};
     }
 
     vNormal = normalize(cross(binormal, tangent));
@@ -349,6 +350,29 @@ export class Ocean {
     /** Waves dropped as unresolvable at this detail level. */
     this.dropped = waves.length - this.waves.length;
 
+    /**
+     * How much of its size a wave keeps as the swell drops, as an exponent on
+     * `waveHeight`. 1 is proportional — the old behaviour, where turning the
+     * swell down shrank the entire sea uniformly and left it glassy. Short
+     * waves are wind chop, and chop doesn't leave with the swell: the sea gets
+     * *smaller*, not *smoother*.
+     *
+     * Graded by wavelength across the authored set rather than the surviving
+     * one, so a wave's persistence is a property of the wave and not of the
+     * quality tier that may have dropped its neighbour.
+     */
+    this.chopPersistence = options.chopPersistence ?? 0.45;
+
+    const lengths = waves.map((wave) => wave.w);
+    const shortest = Math.min(...lengths);
+    const span = Math.max(...lengths) - shortest;
+    this._persistence = this.waves.map((wave) =>
+      span > 0
+        ? THREE.MathUtils.lerp(this.chopPersistence, 1, (wave.w - shortest) / span)
+        : 1,
+    );
+    this._waveScales = new Float32Array(this.waves.length);
+
     this.group = new THREE.Group();
     this._waveTime = 0;
     this._section = { steep: 1, barrel: 0 };
@@ -366,6 +390,7 @@ export class Ocean {
         uTime: { value: 0 },
         uOffset: { value: new THREE.Vector2() },
         uWaves: { value: this.waves },
+        uWaveScale: { value: this._waveScales },
 
         // --- the configurable knobs ---
         uWaveHeight: { value: options.waveHeight ?? 1 },
@@ -389,6 +414,8 @@ export class Ocean {
         uFadeDistance: { value: this.size * 0.42 },
       },
     });
+
+    this._updateWaveScales();
 
     /**
      * Rate the wave clock advances. 1 is the physically correct deep-water
@@ -419,6 +446,26 @@ export class Ocean {
 
   set waveHeight(value) {
     this.material.uniforms.uWaveHeight.value = Math.max(0, value);
+    this._updateWaveScales();
+  }
+
+  /**
+   * The height multiplier each wave actually gets, written in place so the
+   * shader's uniform array and the physics below read the same numbers — the
+   * one source of truth, rather than a formula duplicated into GLSL.
+   *
+   * Only the way *down* is graded. At and above 1 every wave scales together,
+   * exactly as before, so the sea the whole game is tuned against — and every
+   * measurement taken of it — is untouched. Below 1 the short waves fall off
+   * more slowly, so a small swell still has texture on it instead of turning
+   * to glass. 0 is still a millpond: `0^p` is 0 for any positive exponent.
+   */
+  _updateWaveScales() {
+    const height = this.material.uniforms.uWaveHeight.value;
+
+    for (let i = 0; i < this._waveScales.length; i++) {
+      this._waveScales[i] = height >= 1 ? height : height ** this._persistence[i];
+    }
   }
 
   /**
@@ -522,16 +569,18 @@ export class Ocean {
 
   sampleHeight(x, z, time = this._waveTime) {
     let height = 0;
-    const waveHeight = this.waveHeight * this.sampleSection(x, z, this._section).steep;
+    const steep = this.sampleSection(x, z, this._section).steep;
 
-    for (const wave of this.waves) {
+    for (let i = 0; i < this.waves.length; i++) {
+      const wave = this.waves[i];
       const k = TWO_PI / wave.w;
       const speed = Math.sqrt(GRAVITY / k);
       const length = Math.hypot(wave.x, wave.y) || 1;
       const dirX = wave.x / length;
       const dirZ = wave.y / length;
 
-      const amplitude = (wave.z * waveHeight) / k;
+      // Per-wave scale, not the raw waveHeight — see _updateWaveScales().
+      const amplitude = (wave.z * this._waveScales[i] * steep) / k;
       height += amplitude * Math.sin(k * (dirX * x + dirZ * z - speed * time));
     }
 
@@ -570,17 +619,20 @@ export class Ocean {
     let totalAmplitude = 0;
 
     const section = this.sampleSection(x, z, this._section);
+    // Only the crest-foam term below wants the overall height; the waves
+    // themselves are scaled individually inside the loop.
     const waveHeight = this.waveHeight * section.steep;
     const choppiness = this.choppiness * (1 + this.barrelChop * section.barrel);
 
-    for (const wave of this.waves) {
+    for (let i = 0; i < this.waves.length; i++) {
+      const wave = this.waves[i];
       const k = TWO_PI / wave.w;
       const speed = Math.sqrt(GRAVITY / k);
       const length = Math.hypot(wave.x, wave.y) || 1;
       const dirX = wave.x / length;
       const dirZ = wave.y / length;
 
-      const steepness = wave.z * waveHeight;
+      const steepness = wave.z * this._waveScales[i] * section.steep;
       const phase = k * (dirX * x + dirZ * z - speed * time);
       const sin = Math.sin(phase);
       const cos = Math.cos(phase);
@@ -646,9 +698,15 @@ export class Ocean {
    */
   get dominantWave() {
     if (!this._dominant) {
-      this._dominant = this.waves.reduce((best, wave) =>
-        wave.z * wave.w > best.z * best.w ? wave : best,
+      // Authored amplitude, deliberately ignoring the per-wave height scaling:
+      // which wave is "the swell" is a property of the wave set. Letting it
+      // depend on `waveHeight` would hand the ride — and the section axis
+      // baked from it — to a different wave partway down the slider.
+      this._dominantIndex = this.waves.reduce(
+        (best, wave, index) => (wave.z * wave.w > this.waves[best].z * this.waves[best].w ? index : best),
+        0,
       );
+      this._dominant = this.waves[this._dominantIndex];
     }
     return this._dominant;
   }
@@ -680,7 +738,7 @@ export class Ocean {
     target.dirX = dirX;
     target.dirZ = dirZ;
     target.phaseSpeed = phaseSpeed;
-    target.steepness = wave.z * this.waveHeight;
+    target.steepness = wave.z * this._waveScales[this._dominantIndex];
 
     return target;
   }

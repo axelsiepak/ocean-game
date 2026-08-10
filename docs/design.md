@@ -236,6 +236,33 @@ of that fold value — quarter steps on the slider give roughly 2% / 9% / 20% / 
 surface coverage. (Real open ocean is nearer the low end; the default of 0.5 is
 tuned to be clearly visible rather than strictly accurate.)
 
+**Small swell keeps its texture.** Scaling every wave by `waveHeight` together
+turns the sea to glass on the way down — at 0.15 the whole surface is 15% of
+itself, chop included — and that isn't what a dropping swell does. Short waves
+are wind chop, and chop doesn't leave with the swell: the sea gets smaller, not
+smoother.
+
+So each wave now takes `waveHeight` to **its own exponent**, graded by
+wavelength: `chopPersistence` (0.45) for the shortest wave in the set, 1 for the
+longest. Measured against the default sea, at `waveHeight` 0.15 the surface keeps
+**27% of its slope against 15% of its height**, and at 0.25, 37% against 25% —
+the shortest wave's amplitude nearly triples at the bottom of the slider.
+
+Only the way *down* is graded. At and above 1 every wave scales together exactly
+as it always did — verified identical to 1e-15 across the surface, the foam and
+the wave frame — so every number measured against the default sea still holds.
+0 is still a millpond, since `0^p` is 0 for any positive exponent.
+
+The multipliers are computed in JS and uploaded as `uWaveScale[]`, and
+`sampleHeight` / `sampleSurface` read that same array. One formula in one place,
+so the shader and the physics can't drift — unlike `_foamAt()` below, which has
+to mirror the shader by hand.
+
+One side effect worth knowing: foam coverage at low swell goes up (1.6% to 3.7%
+at `waveHeight` 0.25), because the fold signal measures steepness and the chop is
+now steeper. Riding is unaffected or slightly better — coasting at 0.5 holds the
+wave 54% of the time against 48%.
+
 **Shading.** Schlick fresnel using water's real 2% normal-incidence reflectance —
 at a distance, nearly all the ocean's brightness is this term. It mixes between a
 depth-tinted body colour and a reflected sky. Sub-surface scattering brightens
@@ -257,7 +284,8 @@ Press `H` for sliders, or set any of these at construction / at runtime:
 
 | Property | Default | Effect |
 | --- | --- | --- |
-| `waveHeight` | 1 | Amplitude, and crest sharpness with it. Above ~3 the summed steepness exceeds 1 and crests fold through themselves. |
+| `waveHeight` | 1 | Amplitude, and crest sharpness with it. Above ~3 the summed steepness exceeds 1 and crests fold through themselves. Below 1 the short waves hold on longer than the swell — see above. |
+| `chopPersistence` | 0.45 | Constructor only. Exponent the *shortest* wave takes `waveHeight` to on the way down; 1 restores the old uniform scaling. |
 | `waveSpeed` | 1 | Rate the wave clock advances. 1 is the physically correct speed. |
 | `choppiness` | 1 | Crest sharpness independent of height. 0 gives rounded sine swell. |
 | `foamAmount` | 0.5 | 0 for no whitecaps, 1 for foam on most crests. |
