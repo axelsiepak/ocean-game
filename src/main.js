@@ -9,7 +9,7 @@ import { Stats } from './utils/Stats.js';
 import { TouchControls, isTouchDevice } from './utils/TouchControls.js';
 import { detectWebGL, showFatalError } from './utils/fatal.js';
 import { createComposer } from './utils/postprocessing.js';
-import { createRenderer, handleResize } from './utils/renderer.js';
+import { capPixelRatio, createRenderer, handleResize } from './utils/renderer.js';
 
 /**
  * Builds the world and starts it running. Returns the teardown.
@@ -39,8 +39,7 @@ function boot() {
       world.sky.sun.castShadow = on;
     },
     setPixelRatio: (value) => {
-      renderer.userData.pixelRatio = value;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, value));
+      capPixelRatio(renderer, value);
       post.setSize(window.innerWidth, window.innerHeight);
     },
   });
