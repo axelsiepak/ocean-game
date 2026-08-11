@@ -159,9 +159,47 @@ and safe to call until then.
 
 ## Look
 
-**Sunset.** A low sun (elevation 0.055) with heavy Rayleigh scattering for the
+**Sunset.** A low sun (elevation 0.12) with heavy Rayleigh scattering for the
 reddening, a warm key light against a cool sky bounce. Most of what sells the
-time of day is that contrast rather than the sky colour itself. The ocean's
+time of day is that contrast rather than the sky colour itself.
+
+**Getting colour out of the dome.** Preetham's output spans roughly 100:1 from
+the sun's side of the sky to the far side, and the frame has one exposure to
+spend on all of it. At 0.5 that used to mean the sunward half clipped to paper
+white — measured (255, 255, 249) ten degrees above the sun — while the far side
+crushed toward black, 8.9% of the dome below level 60. Both ends throw their
+colour away: white is white and black is black however saturated the model says
+they are.
+
+Two fixes, both measured over 528 directions through the game's actual post
+chain (grade, ACES at exposure 0.5, sRGB):
+
+- **The sun sits higher.** 0.055 rad is barely three degrees; most of the dome
+  fell off the bottom of the exposure. 0.12 is still under seven degrees and
+  still reads as sunset, and is worth a third of the gain on its own.
+- **The sky rolls its own highlights off** before the frame's tone mapper sees
+  them (`skyHighlight`, a Reinhard-style ceiling), then puts back the saturation
+  that convergence costs (`skySaturation`). Both are patched into the addon's
+  shader in `Sky._compressRange()`, since it offers no hook.
+
+Mean chroma across the dome goes **0.273 to 0.518**, nothing crushes any more
+(8.9% to 0%), the hue arc on show widens from 232° to 248°, and the zenith goes
+from `#00224e` to `#00499d`. Values came out of a sweep over elevation,
+turbidity, rayleigh, Mie coefficient, ceiling and saturation; the ceiling of 4
+was the best of the range tried, and the sun's immediate glare stays white on
+purpose.
+
+**The addon's clouds are off.** This version of three's `Sky` ships clouds and
+turns them on by default, which the game had been getting without asking. Their
+colour is multiplied by the sun intensity, which near the horizon is a fiftieth
+of its noon value, so at sunset they can only darken: full cover measured 0.518
+mean chroma down to 0.427. `cloudCoverage` is a constructor option if you want
+them back — they need a higher sun, and `time` fed into the uniform to move.
+
+The ocean's palette was authored against the *old* sky and hasn't been retuned
+against this one. The water is analytic and self-consistent, so nothing looks
+broken, but `zenithColor` / `horizonColor` are the knobs if the two ever read as
+disagreeing. The ocean's
 palette is authored against the sky it reflects, so both moved together — the
 analytic sky reflection in the water shader shares the sun direction with the
 real dome, which is what keeps them in step.

@@ -36,7 +36,10 @@ export class MainScene {
     // warm key light against a cool sky bounce — most of what sells the time of
     // day is that contrast rather than the sky colour itself.
     this.sky = new Sky({
-      elevation: 0.055,
+      // Measured: at 0.055 the sun sits so low that most of the dome falls off
+      // the bottom of the exposure. Lifting it to 0.12 — still under seven
+      // degrees, still sunset — is on its own worth a third of the colour.
+      elevation: 0.12,
       azimuth: 2.4,
       turbidity: 6,
       rayleigh: 3.1,

@@ -27,6 +27,15 @@ export class Sky {
     uniforms.mieCoefficient.value = options.mieCoefficient ?? 0.004;
     uniforms.mieDirectionalG.value = options.mieDirectionalG ?? 0.8;
 
+    // The addon's clouds are unlit at a low sun — their colour ends up
+    // multiplied by the sun intensity, which near the horizon is a fiftieth of
+    // its noon value. All they can do at sunset is darken the sky: measured,
+    // full cover takes the dome from 0.518 mean chroma to 0.427 and eats the
+    // colour rather than adding any. Off unless a caller wants them.
+    uniforms.cloudCoverage.value = options.cloudCoverage ?? 0;
+
+    this._compressRange(options);
+
     this.sun = new THREE.DirectionalLight(
       options.sunColor ?? 0xfff2e0,
       options.sunIntensity ?? 2.4,
@@ -49,6 +58,50 @@ export class Sky {
 
     this.group.add(this.mesh, this.sun, this.sun.target, this.ambient);
     this.setSunPosition(this.elevation, this.azimuth);
+  }
+
+  /**
+   * Brings the dome into a range one exposure can actually show.
+   *
+   * Preetham's output spans about 100:1 from the sun's side of the sky to the
+   * far side, and the frame has a single exposure to spend on all of it. At the
+   * game's 0.5 that meant the sunward half clipped to paper white — measured
+   * (255, 255, 249) ten degrees above the sun — while the rest crushed toward
+   * black, 8.9% of the dome below level 60. Both ends lose their colour: white
+   * is white and black is black however saturated the model says they are.
+   *
+   * So the sky rolls its own highlights off before the frame's tone mapper sees
+   * them, and puts back the saturation that convergence costs. Measured across
+   * the dome, mean chroma goes 0.273 -> 0.518, nothing crushes, and the range of
+   * hues on show widens from 232 to 248 degrees.
+   *
+   * Done by patching the addon's shader because it has no hook for this. The
+   * marker is checked rather than assumed: a three upgrade that renames it
+   * should leave a note in the console, not silently drop the correction.
+   */
+  _compressRange(options) {
+    const material = this.mesh.material;
+
+    material.uniforms.skyHighlight = { value: options.skyHighlight ?? 4 };
+    material.uniforms.skySaturation = { value: options.skySaturation ?? 1.6 };
+
+    const marker = 'gl_FragColor = vec4( texColor, 1.0 );';
+    if (!material.fragmentShader.includes(marker)) {
+      console.warn('Sky: shader marker not found, leaving the dome uncompressed.');
+      return;
+    }
+
+    material.fragmentShader = material.fragmentShader.replace(
+      marker,
+      /* glsl */ `
+      texColor = texColor / (1.0 + texColor / skyHighlight);
+      float skyLuminance = dot(texColor, vec3(0.2126, 0.7152, 0.0722));
+      texColor = mix(vec3(skyLuminance), texColor, skySaturation);
+
+      ${marker}`,
+    );
+
+    material.fragmentShader = `uniform float skyHighlight;\nuniform float skySaturation;\n${material.fragmentShader}`;
   }
 
   setSunPosition(elevation, azimuth) {
