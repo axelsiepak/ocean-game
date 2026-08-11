@@ -316,6 +316,23 @@ property is set — then `#include <cube_uv_reflection_fragment>` and replace
 `sampleSky()` with `textureCubeUV(envMap, reflected, 0.05).rgb`. That picks up
 real sky detail at the cost of coupling the shader to three's program internals.
 
+**The backdrop sits under the deepest trough.** The flat disc that fills the gap
+between the detailed plane and the true horizon is opaque geometry, and it has to
+be — it writes depth, which is the only thing holding off the sky dome, which
+renders at the far plane with its own depth test on. So anywhere the water falls
+below the disc, the disc is the nearer surface, wins the depth test, and leaves a
+flat horizon-coloured hole exactly where the wave is lowest. Parked at a fixed
+−2 m it was swallowing **1.6% of the sea at the default swell and 20% at
+`waveHeight` 2**, starting from about 0.6.
+
+Its depth now comes from the wave set: the amplitude sum (choppiness only moves
+points sideways) times the section profile's ceiling of `1 + sectionStrength`,
+plus `backdropClearance`. Verified across 0 to 3 and 20 wave-clock slices —
+**no sampled point reaches it at any setting**, with 1.5–2.1 m to spare, and it
+follows the slider live. Dropping it costs nothing to look at: the water is faded
+to exactly `horizonColor` long before the plane ends and the disc *is*
+`horizonColor`, so the step at the seam is between two identical colours.
+
 ### Tuning it
 
 Press `H` for sliders, or set any of these at construction / at runtime:

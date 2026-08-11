@@ -363,6 +363,9 @@ export class Ocean {
      */
     this.chopPersistence = options.chopPersistence ?? 0.45;
 
+    /** Metres of water kept between the deepest possible trough and the backdrop. */
+    this.backdropClearance = options.backdropClearance ?? 1.5;
+
     const lengths = waves.map((wave) => wave.w);
     const shortest = Math.min(...lengths);
     const span = Math.max(...lengths) - shortest;
@@ -433,7 +436,7 @@ export class Ocean {
       new THREE.CircleGeometry(20000, 32).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: horizonColor }),
     );
-    this.backdrop.position.y = -2;
+    this.backdrop.position.y = this._backdropDepth;
     this.backdrop.frustumCulled = false;
 
     this.group.add(this.mesh, this.backdrop);
@@ -466,6 +469,38 @@ export class Ocean {
     for (let i = 0; i < this._waveScales.length; i++) {
       this._waveScales[i] = height >= 1 ? height : height ** this._persistence[i];
     }
+
+    this._updateBackdropDepth();
+  }
+
+  /**
+   * Sinks the backdrop below the deepest trough the swell can dig.
+   *
+   * The backdrop is opaque geometry, not a background — it has to write depth
+   * or the sky dome, which renders at the far plane with its depth test on,
+   * paints straight over it. So anywhere the water falls below it, it is the
+   * nearer surface, wins the depth test, and leaves a flat horizon-coloured
+   * hole exactly where the wave is lowest. At the fixed -2 m it used to sit at,
+   * that was 1.6% of the sea at the default swell and 20% at waveHeight 2.
+   *
+   * Vertical displacement is the plain amplitude sum — choppiness only moves
+   * points sideways — and the section profile multiplies it, its own ceiling
+   * being 1 + sectionStrength with both terms of the profile at full tilt.
+   *
+   * Dropping it costs nothing to look at: the water is faded to exactly
+   * `horizonColor` well before the plane ends, and the backdrop *is*
+   * `horizonColor`, so the step at the seam is between two identical colours.
+   */
+  _updateBackdropDepth() {
+    const steepCeiling = 1 + this.material.uniforms.uSectionStrength.value;
+
+    let amplitude = 0;
+    for (let i = 0; i < this.waves.length; i++) {
+      const wave = this.waves[i];
+      amplitude += (wave.z * this._waveScales[i] * wave.w) / TWO_PI;
+    }
+
+    this._backdropDepth = -(amplitude * steepCeiling + this.backdropClearance);
   }
 
   /**
@@ -759,7 +794,7 @@ export class Ocean {
 
       this.mesh.position.set(x, 0, z);
       this.material.uniforms.uOffset.value.set(x, z);
-      this.backdrop.position.set(focus.x, -2, focus.z);
+      this.backdrop.position.set(focus.x, this._backdropDepth, focus.z);
     }
   }
 }
