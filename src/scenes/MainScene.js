@@ -84,6 +84,7 @@ export class MainScene {
     this.rocks = new Rocks({ poolSize: tier.rockPool });
 
     this.ocean.setSunDirection(this.sky.sunDirection);
+    this._matchWaterToSky();
     this.scene.add(
       this.sky.group,
       this.ocean.group,
@@ -225,9 +226,20 @@ export class MainScene {
     this.cameraRig.reset();
   }
 
+  /**
+   * Hands the water the sky's own colours, so the reflection is of the sky
+   * that's actually up there rather than of one authored months ago. Cheap
+   * enough to redo whenever the sun moves: 25 evaluations of an analytic model.
+   */
+  _matchWaterToSky() {
+    this._skyUp ??= new THREE.Vector3(0, 1, 0);
+    this.ocean.setSkyPalette(this.sky.sampleColor(this._skyUp), this.sky.horizonColor());
+  }
+
   _setSunElevation(elevation) {
     this.sky.setSunPosition(elevation, this.sky.azimuth);
     this.ocean.setSunDirection(this.sky.sunDirection);
+    this._matchWaterToSky();
 
     // The environment map is a full re-render of the sky through PMREM, which
     // is far too costly to redo on every slider tick. The sky dome, the sun

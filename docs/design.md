@@ -196,10 +196,33 @@ of its noon value, so at sunset they can only darken: full cover measured 0.518
 mean chroma down to 0.427. `cloudCoverage` is a constructor option if you want
 them back — they need a higher sun, and `time` fed into the uniform to move.
 
-The ocean's palette was authored against the *old* sky and hasn't been retuned
-against this one. The water is analytic and self-consistent, so nothing looks
-broken, but `zenithColor` / `horizonColor` are the knobs if the two ever read as
-disagreeing. The ocean's
+**The water reflects the sky it is actually under.** The ocean's reflection is
+analytic — a horizon-to-zenith gradient plus a sun — and both colours used to be
+authored by hand, which is fine until the sky moves. Against the sky as it now
+stands, those hand values were **1.8x too dark at the zenith**, and at the
+horizon the sea faded to a burnt orange (`#b97e4b`) under a warm grey sky
+(`#b3968f`) — at grazing incidence Fresnel is ~0.95, so a flat sea is very nearly
+a mirror of the sky above it and those two should almost match. That mismatch is
+most of what makes water read as painted rather than wet.
+
+`Sky.sampleColor()` evaluates the same Preetham model on the CPU, and
+`MainScene._matchWaterToSky()` hands the result to `Ocean.setSkyPalette()`, which
+sets the reflection, the far fade and the backdrop together. They're radiance,
+not swatches — the values run above 1, which is what lets a distant sea be as
+bright as the sky it mirrors. It's 25 evaluations of an analytic model, so it
+re-runs whenever the sun moves; **the sun-elevation slider now retints the water**,
+which it never used to.
+
+The horizon band is the per-channel **median** around the compass, not the mean.
+At a low sun the ring spans an order of magnitude, so the mean is dragged up by
+the handful of directions near the sun and ends up brighter than nearly the whole
+sky — measured, 100% off the typical direction against 41% for the median. Mean
+error at the seam falls from **69% to 50%**; the rest is the price of one colour
+standing in for a sky that varies that much, and the sunward excess is left to
+the shader's own sun-glow term, which at least aims it in the right direction.
+
+Same hazard as `Ocean._foamAt()`: the CPU model mirrors the addon's shader by
+hand, so if one changes the other must. The ocean's
 palette is authored against the sky it reflects, so both moved together — the
 analytic sky reflection in the water shader shares the sun direction with the
 real dome, which is what keeps them in step.
@@ -357,7 +380,9 @@ ocean.foamAmount = 0.8;
 would snap the entire sea to a new phase the moment you moved the slider.
 
 Colours (`deepColor`, `shallowColor`, `scatterColor`, `zenithColor`,
-`horizonColor`, `foamColor`) are constructor options. The defaults are authored
+`horizonColor`, `foamColor`) are constructor options — though `zenithColor` and
+`horizonColor` are overwritten at boot by `setSkyPalette()`, which takes them
+from the sky itself (see [Look](#look)). The defaults are authored
 for a low-to-mid sun; if you park the sun near the zenith you'll want to retune
 `zenithColor` / `horizonColor` to match the sky.
 

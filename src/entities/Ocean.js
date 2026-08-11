@@ -539,6 +539,30 @@ export class Ocean {
   }
 
   /**
+   * Point the reflection at the sky that's actually overhead.
+   *
+   * These two colours were authored by hand, which is fine until the sky
+   * changes — and then the sea is reflecting one sky while the player is
+   * looking at another. Measured against the sky as it now stands, the hand
+   * values were 1.8x too dark at the zenith and the wrong hue at the horizon:
+   * the sea faded to a burnt orange (#b97e4b) under a warm grey sky (#b3968f),
+   * where Fresnel at grazing incidence is ~0.95 and the two should very nearly
+   * match. That mismatch is most of what makes water read as painted.
+   *
+   * Radiance, not a swatch — the values run above 1, which is what lets a
+   * distant sea be as bright as the sky it mirrors.
+   */
+  setSkyPalette(zenith, horizon) {
+    this.material.uniforms.uZenithColor.value.copy(zenith);
+    this.material.uniforms.uHorizonColor.value.copy(horizon);
+
+    // The far fade and the backdrop are both the horizon colour: they are the
+    // same surface as far as the eye is concerned, and the seam only stays
+    // invisible while all three agree.
+    this.backdrop.material.color.copy(horizon);
+  }
+
+  /**
    * Approximate surface height at a world position, mirroring the shader's
    * vertical term (and its `waveHeight` scaling).
    *
