@@ -11,3 +11,6 @@ npm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local agent guidance — kept on disk, deliberately not published.
+CLAUDE.md
