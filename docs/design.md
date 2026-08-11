@@ -636,40 +636,6 @@ rocks, 3 m up clean.
 Density is deliberately sparse — about **one strike per five minutes** of
 riding. See below for why.
 
-## Boats and sharks
-
-Both are endless hashed fields, the same trick as the rocks: no list exists
-anywhere, every grid cell decides for itself by hashing its coordinates. The hash
-moved to `utils/hash.js` when the second and third field wanted it.
-
-**Boats** (`entities/Boats.js`) are moored, one every ~150 m at 40% of cells, and
-they **ride the swell** — four surface samples each for height, pitch and roll,
-the same arrangement `Player` floats on. A boat sitting at a fixed height would
-be the one thing on screen admitting the sea is a shader. Verified against the
-surface to 0.06 m.
-
-Each part of the hull is one `InstancedMesh` covering the whole fleet, so it's
-five draws for any number of boats rather than five *each*. Empty pool slots
-collapse to a zero matrix — worth knowing that a degenerate matrix decomposes
-back to *unit* scale in three, so that check has to read the matrix itself.
-
-**Sharks** (`entities/Sharks.js`) are atmosphere, not hazard. Nothing there
-touches the board: a shark that could end a ride would be a fifth way to wipe
-out and would have to be balanced against the four that exist, since the rocks
-are already tuned to about one strike per five minutes. The file ends with what
-adding that would take.
-
-The whole thing leans on the water being opaque. A shark is a fin, a tail tip and
-a back; to dive it simply sinks, and the sea hides it for free — no fading, no
-visibility flags, and it shows through the face of a trough exactly as it should.
-Each works its own orbit around a *lagging* copy of the player's position, so
-sprinting drops the pack behind instead of towing three fins in formation.
-Measured over 5 minutes of riding: 2 to 83 m out, **never surfaced closer than
-16 m** (the dive wins that race), fin up 66% of the time.
-
-Both cost 14 draw calls and 864 triangles together, against a scene that was 22
-draws — and draw calls were never what this game spends its frame on.
-
 ## Tricks
 
 `Space`. What you get depends on where you are and what you're holding:

@@ -71,12 +71,9 @@ src/
     Surfboard.js      the player: wave-driven surfing, carving, banking
     Spray.js          pooled particle spray thrown off a buried rail
     Rocks.js          hashed, endless obstacle field
-    Boats.js          hashed, endless fleet of moored boats riding the swell
-    Sharks.js         fins working the line-up; atmosphere, not hazard
     Surfer.js         low-poly rider, parented to the board
     Player.js         boat, now anchored scenery (keeps its controls if wanted)
   utils/
-    hash.js           deterministic cell hash the endless fields share
     renderer.js       WebGL renderer setup + resize handling
     Loop.js           rAF loop; calls update(delta, elapsed) on registered objects
     CameraRig.js      chase + POV cameras, smoothing, shake
