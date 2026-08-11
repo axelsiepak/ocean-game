@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 
+import { Boats } from '../entities/Boats.js';
 import { Ocean } from '../entities/Ocean.js';
 import { Player } from '../entities/Player.js';
 import { Sky } from '../entities/Sky.js';
 import { Rocks } from '../entities/Rocks.js';
+import { Sharks } from '../entities/Sharks.js';
 import { Spray } from '../entities/Spray.js';
 import { Surfboard } from '../entities/Surfboard.js';
 import { Surfer } from '../entities/Surfer.js';
@@ -79,6 +81,12 @@ export class MainScene {
     // Bigger pool now that the wake runs continuously alongside carve spray.
     this.spray = new Spray({ renderer, capacity: tier.sprayCapacity ?? 700 });
 
+    // Company on the water: a moored fleet you sail past, and a pack working
+    // the line-up. Both are endless hashed fields like the rocks, so they cost
+    // no memory and lay out the same way every run.
+    this.boats = new Boats({ ocean: this.ocean, poolSize: tier.boatPool });
+    this.sharks = new Sharks({ ocean: this.ocean, count: tier.sharkCount });
+
     this.surfer = new Surfer();
     this.surfboard.group.add(this.surfer.group);
     this.rocks = new Rocks({ poolSize: tier.rockPool });
@@ -92,6 +100,8 @@ export class MainScene {
       this.boat.group,
       this.spray.points,
       this.rocks.group,
+      this.boats.group,
+      this.sharks.group,
     );
     this.sky.applyEnvironment(renderer, this.scene);
 
@@ -215,6 +225,7 @@ export class MainScene {
     this.ocean._waveTime = 0;
 
     this.scoring.reset();
+    this.sharks.reset();
     this.spray.clear();
     this.input.clear();
 
@@ -268,6 +279,8 @@ export class MainScene {
     this.spray.update(delta, this.surfboard);
     this.surfer.update(delta, this.surfboard);
     this.boat.update(delta, elapsed);
+    this.boats.update(delta, focus);
+    this.sharks.update(delta, focus);
     this.rocks.update(delta, focus);
 
     // Rocks are checked after the board has moved, against where it ended up.
@@ -310,5 +323,7 @@ export class MainScene {
     this.hud.dispose();
     this.audio.dispose();
     this.spray.dispose();
+    this.boats.dispose();
+    this.sharks.dispose();
   }
 }

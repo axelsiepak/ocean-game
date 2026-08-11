@@ -21,6 +21,8 @@ export const TIERS = {
     shadows: false,
     sprayCapacity: 260,
     rockPool: 14,
+    boatPool: 3,
+    sharkCount: 2,
   },
   medium: {
     pixelRatio: 1.25,
@@ -30,6 +32,8 @@ export const TIERS = {
     shadows: true,
     sprayCapacity: 450,
     rockPool: 20,
+    boatPool: 5,
+    sharkCount: 3,
   },
   high: {
     pixelRatio: 1.5,
@@ -39,6 +43,8 @@ export const TIERS = {
     shadows: true,
     sprayCapacity: 700,
     rockPool: 28,
+    boatPool: 6,
+    sharkCount: 3,
   },
 };
 
