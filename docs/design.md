@@ -490,7 +490,10 @@ the boat's bow, a breaching whale.
 pose and the POV pose are both computed every frame and blended by one number, so
 switching modes (`C`) is just easing that number and the transition is smooth for
 free. Each mode keeps its own drag state, so orbiting the chase cam doesn't leave
-the POV staring sideways after a switch.
+the POV staring sideways after a switch. **POV is the default** (`mode: 'pov'` in
+`MainScene`): the rig starts with the blend already at 1, so the game opens on
+board rather than cross-fading in, and `C` switches out to chase. A restart keeps
+whichever mode the player last chose — `reset()` only re-snaps the pose.
 
 **Chase** sits behind and above, loosely damped (6/s position, 10/s rotation) so
 it swings through turns rather than tracking rigidly. It's clamped above the

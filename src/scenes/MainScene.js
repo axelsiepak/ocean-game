@@ -98,6 +98,8 @@ export class MainScene {
     this.cameraRig = new CameraRig(this.camera, this.surfboard.group, {
       domElement: renderer.domElement,
       getHeading: () => this.surfboard.heading,
+      // First-person is the default view; C falls back to the chase cam.
+      mode: 'pov',
       // Tight and low: a surfboard is a tenth the size of the boat, and sitting
       // near the water sells the wave motion far better than looking down on it.
       chase: { distance: 7.5, height: 2.2, lookHeight: 0.6 },
