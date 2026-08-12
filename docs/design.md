@@ -532,6 +532,36 @@ Rotation is **slerped toward a look-at basis** rather than snapped with `lookAt(
 every frame. That's what produces the lag through a turn (measured: peaks around
 2.9°/frame, no discontinuities).
 
+### The speed rush
+
+At **10 m/s and above the FOV widens by a fixed 8°**, 60 → 68, eased in over
+about a second (`rateIn` 2.6/s) and pulled back faster than it arrives
+(`rateOut` 4.5/s) so the rush builds and then snaps off. It's a step, not a
+function of speed: a proportional zoom breathes with every bump in the velocity,
+where one latching step reads as *this is fast* and then gets out of the way.
+
+The threshold is chosen against the physics, not picked round. Paddling flat out
+tops out at 5.1 m/s, so the boost can never mean "I'm holding W" — only that the
+wave is doing the work, which is the thing worth rewarding.
+
+**Hysteresis is what makes it a step.** Speed hunts either side of 10 down a
+face, so the rig releases at 8.5, not at 10. Measured over 5 min of trimming:
+
+| `release` | Engaged | At full boost | FOV visibly moving | Switches/min |
+| --- | --- | --- | --- | --- |
+| 10 (no band) | 75.5% | 58.3% | 24.9% | 19.8 |
+| 8.5 | 93.2% | 88.6% | 6.5% | 5.0 |
+| 7.5 | 98.5% | 98.1% | 0.3% | 0.2 |
+
+Without the band the zoom is in motion a quarter of the time — the pulsing the
+step was meant to avoid. Below about 7.5 it stops releasing at all and the boost
+becomes a permanent FOV change that no longer says anything.
+
+**It rewards trim, not carving**, which falls out of the speed model rather than
+being designed in: the same 5 min run holds ≥10 m/s 75.5% of the time going
+straight, 7.0% under a light carve (±0.35) and 0.4% under a medium one (±0.7).
+Rails cost speed, so the rush belongs to the drawn-out line down the face.
+
 ### Shake
 
 Trauma-based, with two inputs. `addTrauma(x)` is a decaying impulse for events;

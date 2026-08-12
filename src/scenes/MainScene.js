@@ -100,6 +100,10 @@ export class MainScene {
       getHeading: () => this.surfboard.heading,
       // First-person is the default view; C falls back to the chase cam.
       mode: 'pov',
+      // Widen the view once the rider is genuinely up to speed. 10 m/s is above
+      // anything paddling can reach (5.1 max), so it only ever means the wave
+      // is doing the work.
+      getSpeed: () => this.surfboard.speed,
       // Tight and low: a surfboard is a tenth the size of the boat, and sitting
       // near the water sells the wave motion far better than looking down on it.
       chase: { distance: 7.5, height: 2.2, lookHeight: 0.6 },
