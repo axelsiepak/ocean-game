@@ -56,8 +56,12 @@ export class CameraRig {
     };
 
     this.pov = {
-      /** Forward of the board's centre — behind the nose, where a surfer stands. */
-      forward: -0.15,
+      /**
+       * Forward of the board's centre, i.e. back toward the tail. -0.6 sits over
+       * the back foot (the tail pad is at -0.72) rather than mid-deck, which
+       * keeps the nose and a good length of board in shot.
+       */
+      forward: -0.6,
       height: 1.05,
       lookAhead: 12,
       lookDrop: 1.6,

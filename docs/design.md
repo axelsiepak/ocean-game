@@ -500,10 +500,18 @@ it swings through turns rather than tracking rigidly. It's clamped above the
 water via a `getMinHeight` callback — the ocean is opaque, so a camera that dipped
 into a trough would black out the screen.
 
-**POV** rides just behind the nose at about head height and inherits a fraction
-of the board's pitch and lean — 40% of the bank rolls the horizon, which is most
-of what sells a carve from on board. A surfer's head stays far more level than
-the deck, so taking all of it would be sickening.
+**POV** rides over the back foot (`forward` −0.6, where the tail pad sits at
+−0.72) at about head height, so the nose and a good length of board stay in shot.
+It inherits a fraction of the board's pitch and lean — 40% of the bank rolls the
+horizon, which is most of what sells a carve from on board. A surfer's head stays
+far more level than the deck, so taking all of it would be sickening.
+
+Sitting back costs water clearance, because the face rises toward the crest
+behind the board and `getMinHeight` floors the eye at wave height + 0.6. Measured
+over 120 s of neutral and of hard alternating carving, the floor is never reached:
+worst-case clearance is 0.37 m at −0.6, against 0.47 m at the old −0.15 and 0.31 m
+at −0.9. There is room to go further back, but not indefinitely — once the clamp
+engages the eye gets lifted off the deck.
 
 It is **fixed to the board**: `pov.rigid` uses the blend itself as a floor on the
 smoothing factor, so at full POV the factor is 1 and the camera snaps to its
