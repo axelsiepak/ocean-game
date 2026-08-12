@@ -94,12 +94,44 @@ export class CameraRig {
      * and 88.6%, with the FOV visibly moving 6.5% of the time against 24.9%.
      * Below ~7.5 it stops releasing at all (98.5% engaged) and the step no
      * longer means anything.
+     *
+     * A carve scrubs speed, so on speed alone the rush drops out at exactly the
+     * moment the ride looks fastest. `leanDiscount` lowers the bar in
+     * proportion to how far the board is over, and `leanHold` refuses to
+     * release at all while it is on a rail. Neither touches trimming, where
+     * lean is flat zero. Measured over 5 min per style, sampling only frames
+     * where the rider is actually up (bank during a wipeout is forced to full
+     * lock, so those frames are excluded):
+     *
+     *   style          engaged while carving   FOV pulses/min on a rail
+     *   gentle ±0.35     83% -> 88%              0.8 -> 0.2
+     *   hard ±0.8        45% -> 62%              0.6 -> 0.0
+     *   hard quick       32% -> 55%              1.2 -> 0.8
+     *   full lock ±1.0   33% -> 78%              0.8 -> 1.4
+     *   trimming         94% (unchanged)         5.0 (unchanged)
+     *
+     * 2.0 rather than more because it puts the floor at 8 m/s, still clear of
+     * the 5.1 m/s paddling tops out at: the rush keeps meaning "the wave is
+     * doing the work". A discount of 3.5 does reach 87% on a hard carve, but
+     * its floor of 6.5 m/s is nearly paddling pace. Simply dropping the
+     * threshold to a flat 8 was the obvious alternative and is worse: trimming
+     * then sits at 100% engaged and visibly zooming 0.3% of the time, i.e. the
+     * step becomes a permanent FOV change and stops meaning anything. The hold
+     * cannot latch the boost on at a standstill, because bank is proportional
+     * to yaw rate times speed — the slowest frame ever seen on a rail was
+     * 5.3 m/s.
      */
     this.getSpeed = options.getSpeed ?? null;
+    /** Normalised 0..1 lean, i.e. bank as a fraction of full rail. */
+    this.getLean = options.getLean ?? null;
     this.speedFov = {
       threshold: 10,
       release: 8.5,
       boost: 8,
+      /** m/s knocked off the threshold at full lean. */
+      leanDiscount: 2,
+      /** Lean above which the boost holds rather than releasing. */
+      leanHold: 0.35,
       /** Per second. Slower in than out: a rush should build and then snap back. */
       rateIn: 2.6,
       rateOut: 4.5,
@@ -301,10 +333,18 @@ export class CameraRig {
     if (!this.getSpeed) return;
 
     const speed = this.getSpeed();
-    const { threshold, release, boost, rateIn, rateOut } = this.speedFov;
+    const { threshold, release, boost, rateIn, rateOut, leanDiscount, leanHold } = this.speedFov;
+    const lean = this.getLean ? this.getLean() : 0;
 
-    if (this._fovEngaged ? speed < release : speed >= threshold) {
-      this._fovEngaged = !this._fovEngaged;
+    // Lean lowers both ends of the band together, so the hysteresis keeps the
+    // 1.5 m/s width it was tuned to at any angle.
+    const engage = threshold - leanDiscount * lean;
+    const drop = engage - (threshold - release);
+
+    if (this._fovEngaged) {
+      if (speed < drop && lean < leanHold) this._fovEngaged = false;
+    } else if (speed >= engage) {
+      this._fovEngaged = true;
     }
 
     const goal = this._fovEngaged ? boost : 0;

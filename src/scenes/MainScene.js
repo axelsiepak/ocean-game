@@ -104,6 +104,14 @@ export class MainScene {
       // anything paddling can reach (5.1 max), so it only ever means the wave
       // is doing the work.
       getSpeed: () => this.surfboard.speed,
+      // Carving costs speed, so on speed alone the rush cuts out mid-turn. Lean
+      // buys back some of the threshold. Zero during a wipeout: bank is forced
+      // to full lock on the way down, which would otherwise hold the boost on
+      // through the crash.
+      getLean: () =>
+        this.surfboard.wipeout > 0
+          ? 0
+          : Math.min(1, Math.abs(this.surfboard.bank) / this.surfboard.maxBank),
       // Tight and low: a surfboard is a tenth the size of the boat, and sitting
       // near the water sells the wave motion far better than looking down on it.
       chase: { distance: 7.5, height: 2.2, lookHeight: 0.6 },

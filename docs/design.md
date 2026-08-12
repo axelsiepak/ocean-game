@@ -557,10 +557,38 @@ Without the band the zoom is in motion a quarter of the time — the pulsing the
 step was meant to avoid. Below about 7.5 it stops releasing at all and the boost
 becomes a permanent FOV change that no longer says anything.
 
-**It rewards trim, not carving**, which falls out of the speed model rather than
-being designed in: the same 5 min run holds ≥10 m/s 75.5% of the time going
-straight, 7.0% under a light carve (±0.35) and 0.4% under a medium one (±0.7).
-Rails cost speed, so the rush belongs to the drawn-out line down the face.
+**Lean buys back some of the threshold, so a carve triggers it too.** Rails cost
+speed, so on speed alone the rush cut out at exactly the moment the ride looks
+fastest. Two corrections, both keyed off bank as a fraction of full rail:
+
+- `leanDiscount` 2.0 — the engage threshold drops toward **8 m/s at full lean**,
+  taking the release point down with it so the 1.5 m/s band keeps its tuned width
+  at any angle.
+- `leanHold` 0.35 — above about a third of full rail the boost **refuses to
+  release**, so a turn doesn't strobe the FOV.
+
+Neither touches trimming, where lean is flat zero. Measured over 5 min per style,
+sampling only frames where the rider is actually up:
+
+| Style | Engaged while carving | FOV pulses/min on a rail |
+| --- | --- | --- |
+| Gentle (±0.35) | 83% → **88%** | 0.8 → **0.2** |
+| Hard (±0.8) | 45% → **62%** | 0.6 → **0.0** |
+| Hard, quick | 32% → **55%** | 1.2 → **0.8** |
+| Full lock (±1.0) | 33% → **78%** | 0.8 → **1.4** |
+| Trimming | 94% (unchanged) | 5.0 (unchanged) |
+
+2.0 and not more because it leaves the floor at 8 m/s, still clear of the 5.1 m/s
+that paddling tops out at — the rush goes on meaning *the wave is doing the work*.
+A discount of 3.5 does reach 87% on a hard carve, but its floor of 6.5 m/s is
+nearly paddling pace. Simply lowering the threshold to a flat 8 was the obvious
+alternative and is worse: trimming then sits at 100% engaged and the step becomes
+a permanent FOV change.
+
+The hold can't latch the boost on at a standstill, because bank is itself
+proportional to yaw rate × speed — the slowest frame ever seen on a rail was
+5.3 m/s. Lean is reported as zero during a wipeout, where bank is forced to full
+lock on the way down and would otherwise hold the rush on through the crash.
 
 ### Shake
 
