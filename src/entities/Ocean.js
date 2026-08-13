@@ -21,6 +21,208 @@ const DEFAULT_WAVES = [
   new THREE.Vector4(-1.0, -0.35, 0.045, 16),
 ];
 
+/**
+ * The beach, as one piece of GLSL pasted into every shader that needs it and
+ * mirrored by `Ocean._shoreProfile()` in JS.
+ *
+ * This is the whole world model. Everything about the wave — how tall it is,
+ * where it throws, where it turns to whitewater, where the sand is — is a
+ * function of one number: how deep the water is under that point.
+ *
+ * `tanh` is written out rather than called: the default shader language here is
+ * GLSL ES 1.00, which doesn't have it. Only the d >= 0 branch is ever wanted, so
+ * the exp(-2x) form is the stable one.
+ */
+const SHORE_GLSL = /* glsl */ `
+  float shoreTanh(float x) {
+    float e = exp(-2.0 * max(x, 0.0));
+    return (1.0 - e) / (1.0 + e);
+  }
+
+  /**
+   * Still-water depth, in metres. Zero at the waterline and rising out to sea.
+   *
+   * A plane beach of gradient uBeachSlope rolled off to uDeepDepth with a
+   * tanh, which is linear near the shore — the part that matters, since the
+   * breaking depth is what sets where the surf zone is — and flattens into deep
+   * water without a knee for the shoaling term below to catch on.
+   */
+  float shoreDepth(vec2 p) {
+    float d = uShoreLine - dot(p, uShoreAxis);
+    float h = uDeepDepth * shoreTanh(d * uBeachSlope / uDeepDepth);
+
+    // Sandbars. Without them a straight beach breaks in one endless line at a
+    // fixed distance out, so every wave is the same wave; bars are what give a
+    // beach break its peaks and channels. Faded out with depth because a bar is
+    // a shallow-water feature — exp() rather than a window so there's no edge
+    // for the break line to kink along.
+    float t = dot(p, vec2(-uShoreAxis.y, uShoreAxis.x));
+    float bar = sin(t * 0.0131 + 2.4) * 0.55 + sin(t * 0.0074 + 5.1) * 0.45;
+    h *= 1.0 - uBarAmount * bar * exp(-h / uBarDepth);
+
+    return max(h, 0.0);
+  }
+
+  /**
+   * What the wave is doing here: x = amplitude multiplier, y = how much of a
+   * barrel is throwing, z = how thoroughly it has turned to whitewater.
+   *
+   * Two competing effects, and the smaller wins:
+   *
+   * - **Shoaling.** As the water shallows the wave slows, its energy packs into
+   *   a shorter length, and it grows. Green's law, H ~ h^-1/4.
+   * - **Breaking.** Water can only hold a wave so tall for its depth. Past the
+   *   McCowan limit H = 0.78h the crest outruns its own base and throws
+   *   forward, and from there the wave is depth-limited: it can only be as big
+   *   as the water is deep, so it shrinks steadily to nothing at the sand.
+   *
+   * b is the ratio between the two — under 1 the wave is still building, over
+   * 1 it has broken. That single number places the barrel (just past 1, where
+   * the lip is pitching but the face is still clean) and the whitewater
+   * (further in, where it's all foam).
+   *
+   * MUST match Ocean._shoreProfile() in JS exactly. Gameplay reads that copy to
+   * decide where the barrels and the whitewater are, and the two disagreeing
+   * means riding a barrel that isn't drawn, or drowning in clean water.
+   */
+  vec3 shoreProfile(vec2 p, out float depth) {
+    float h = shoreDepth(p);
+    depth = h;
+
+    float shoal = max(1.0, pow(uShoalRefDepth / max(h, 0.05), 0.25));
+    float limit = uBreakerIndex * h / (2.0 * uDeepAmplitude);
+
+    float gain = min(shoal, limit);
+    float b = shoal / max(limit, 1e-4);
+
+    float barrel = smoothstep(1.02, 1.14, b) * (1.0 - smoothstep(1.32, 1.58, b));
+    float white = smoothstep(1.15, 2.0, b);
+
+    return vec3(gain, barrel, white);
+  }
+`;
+
+/**
+ * The bed carried above the waterline, for the dry beach. Kept out of
+ * SHORE_GLSL so the water shader doesn't have to declare uniforms it will never
+ * read.
+ */
+const BEACH_GLSL = /* glsl */ `
+  uniform float uDrySlope;
+  uniform float uDuneHeight;
+
+  float shoreBed(vec2 p) {
+    float d = uShoreLine - dot(p, uShoreAxis);
+    if (d >= 0.0) return -shoreDepth(p);
+
+    // Above the waterline the sand is steeper than the bed under the water and
+    // flattens off into dunes. The kink right at the waterline is not an
+    // artefact — a real beach has a berm there for exactly this reason.
+    return uDuneHeight * shoreTanh(-d * uDrySlope / uDuneHeight);
+  }
+`;
+
+const beachVertexShader = /* glsl */ `
+  uniform vec2 uShoreAxis;
+  uniform float uShoreLine;
+  uniform float uBeachSlope;
+  uniform float uDeepDepth;
+  uniform float uBarAmount;
+  uniform float uBarDepth;
+  uniform float uCrossSize;
+  uniform float uSeawardEdge;
+
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying float vBed;
+
+  ${SHORE_GLSL}
+  ${BEACH_GLSL}
+
+  void main() {
+    // The plane is authored in the shore's own frame — x runs along the beach,
+    // z across it — and mapped into the world here. That way the one place the
+    // shore's direction is defined stays the axis uniform, and the mesh doesn't
+    // have to be rebuilt if it changes.
+    float along = position.x;
+    float d = uSeawardEdge - (position.z + uCrossSize * 0.5);
+
+    vec2 perp = vec2(-uShoreAxis.y, uShoreAxis.x);
+    vec2 world = uShoreAxis * (uShoreLine - d) + perp * along;
+
+    float bed = shoreBed(world);
+
+    // Finite-differenced rather than analytic: the bed is a tanh of a sum of
+    // sines through a reciprocal exponential, and two extra evaluations per
+    // vertex is far cheaper than getting that derivative right. 4 m is under a
+    // third of the cross-shore vertex spacing, so it measures this cell's slope
+    // and not the next one's.
+    float step = 4.0;
+    float bx = shoreBed(world + perp * step) - shoreBed(world - perp * step);
+    float bz = shoreBed(world + uShoreAxis * step) - shoreBed(world - uShoreAxis * step);
+    // The two differences are along the shore frame's axes, so they have to be
+    // rotated back into world XZ before they describe a gradient there.
+    vNormal = normalize(vec3(
+      -(bx * perp.x + bz * uShoreAxis.x) / (2.0 * step),
+      1.0,
+      -(bx * perp.y + bz * uShoreAxis.y) / (2.0 * step)
+    ));
+
+    vBed = bed;
+    vWorldPosition = vec3(world.x, bed, world.y);
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(vWorldPosition, 1.0);
+  }
+`;
+
+const beachFragmentShader = /* glsl */ `
+  uniform float uTime;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
+  uniform vec3 uWetSandColor;
+  uniform vec3 uDrySandColor;
+  uniform vec3 uFoamColor;
+  uniform vec3 uHorizonColor;
+  uniform float uFadeDistance;
+
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying float vBed;
+
+  void main() {
+    vec3 normal = normalize(vNormal);
+    vec3 sunDir = normalize(uSunDirection);
+
+    // Sand darkens where it's wet, and the wet line is where the water has just
+    // been. Everything above about a metre has dried out.
+    float wet = 1.0 - smoothstep(0.0, 1.0, vBed);
+    vec3 sand = mix(uDrySandColor, uWetSandColor, wet);
+
+    // Swash. The waterline is not a line — it surges up the sand and drains
+    // back, and a beach with a static edge reads as a painted backdrop. One
+    // slow sine plus a faster one so the run-up doesn't tick like a metronome.
+    float reach = 0.55 + 0.42 * sin(uTime * 0.31) + 0.16 * sin(uTime * 0.83 + 1.9);
+    float swash = 1.0 - smoothstep(reach - 0.12, reach + 0.10, vBed);
+    sand = mix(sand, uFoamColor, swash * 0.75 * step(0.0, vBed));
+
+    // Lambert against the same sun everything else here uses, with a flat ambient
+    // term so the dunes don't go black at sunset.
+    float light = 0.35 + 0.65 * max(dot(normal, sunDir), 0.0);
+    vec3 color = sand * light;
+    color += uSunColor * pow(max(dot(normal, sunDir), 0.0), 6.0) * 0.06;
+
+    // Same fade the water uses, to the same colour, so the two meet the horizon
+    // together instead of one of them ending in a visible edge.
+    float viewDistance = length(cameraPosition - vWorldPosition);
+    color = mix(color, uHorizonColor, smoothstep(uFadeDistance * 0.45, uFadeDistance * 1.6, viewDistance));
+
+    gl_FragColor = vec4(color, 1.0);
+
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
 const vertexShader = /* glsl */ `
   uniform float uTime;
   uniform vec2 uOffset;
@@ -30,46 +232,25 @@ const vertexShader = /* glsl */ `
   uniform float uChoppiness;
   uniform float uFoamAmount;
   uniform float uFoamReference;
-  uniform vec2 uSectionAxis;
-  uniform float uSectionStrength;
+  uniform vec2 uShoreAxis;
+  uniform float uShoreLine;
+  uniform float uBeachSlope;
+  uniform float uDeepDepth;
+  uniform float uBarAmount;
+  uniform float uBarDepth;
+  uniform float uDeepAmplitude;
+  uniform float uShoalRefDepth;
+  uniform float uBreakerIndex;
   uniform float uBarrelChop;
 
   varying vec3 vWorldPosition;
   varying vec3 vNormal;
   varying float vFoam;
   varying float vHeight;
+  varying float vDepth;
 
-  /**
-   * Character of the wave at a point along the line you ride. x = steepness
-   * multiplier, y = how much of a barrel is throwing here.
-   *
-   * The axis is the swell's direction of travel, not its crest. That's both
-   * what the player actually moves along — ride the wave and your position
-   * across the crest barely changes, so sections laid out that way would never
-   * arrive — and what real waves do: a swell shoaling toward the beach steepens
-   * and starts to barrel as it goes.
-   *
-   * MUST match Ocean.sampleSection() in JS exactly — gameplay reads that copy
-   * to decide where the barrels are, and the two disagreeing means riding a
-   * barrel that isn't drawn.
-   *
-   * Summed sines rather than value noise: identical in GLSL and JS to the last
-   * bit, endless in both directions, and no texture to sample.
-   */
-  vec2 sectionProfile(vec2 worldXZ) {
-    float s = dot(worldXZ, uSectionAxis);
+  ${SHORE_GLSL}
 
-    float n1 = sin(s * 0.0520 + 1.7) * 0.50
-             + sin(s * 0.1050 + 4.2) * 0.33
-             + sin(s * 0.1400 + 0.9) * 0.17;
-    float n2 = sin(s * 0.0740 + 2.4) * 0.55
-             + sin(s * 0.1310 + 5.1) * 0.45;
-
-    float barrel = smoothstep(0.35, 0.85, n2);
-    float steep = 1.0 + uSectionStrength * (0.45 * n1 + 0.55 * barrel);
-
-    return vec2(steep, barrel);
-  }
 
   /**
    * A Gerstner wave moves each point in a circle rather than straight up and
@@ -120,13 +301,16 @@ const vertexShader = /* glsl */ `
     // to world space so the swell doesn't drift around with us.
     vec2 origin = position.xz + uOffset;
 
-    // Sampled once per vertex and treated as locally constant. Sections run
-    // over 45-120 m while the waves themselves are 16-78 m, so the derivative
-    // of the modulation is small next to the wave's own — ignoring it leaves
-    // the normals very slightly off at section boundaries and nowhere else.
-    vec2 section = sectionProfile(origin);
-    float steepMul = section.x;
-    float chopMul = 1.0 + uBarrelChop * section.y;
+    // Sampled once per vertex and treated as locally constant. The beach
+    // profile runs over hundreds of metres while the waves themselves are
+    // 16-78 m, so the derivative of the modulation is small next to the wave's
+    // own — ignoring it leaves the normals very slightly off across the surf
+    // zone and nowhere else.
+    float depth;
+    vec3 shore = shoreProfile(origin, depth);
+    float steepMul = shore.x;
+    float chopMul = 1.0 + uBarrelChop * shore.y;
+    vDepth = depth;
     vec3 displaced = vec3(origin.x, 0.0, origin.y);
 
     vec3 tangent = vec3(1.0, 0.0, 0.0);
@@ -155,7 +339,16 @@ const vertexShader = /* glsl */ `
     // live values would make foam scale-invariant — raising the swell would
     // leave whitecap coverage flat, or even shrink it, which is backwards.
     // Against a fixed reference, taller and choppier seas foam more.
-    float fold = (1.0 - jacobian) / uFoamReference;
+    //
+    // The shoaling gain *is* divided back out, though, and that is a different
+    // question from the one above. This term is whitecaps, which are a property
+    // of the swell; a wave standing up over a shallowing bottom is not
+    // whitecapping, it is on its way to breaking, and breaking has its own term
+    // below. Leaving the gain in double-counted it — at the lineup, in 8 m of
+    // water, the gain of 1.25 was enough to put the take-off spot over the
+    // wipeout threshold for 22% of every wave cycle, so sitting still waiting
+    // for a wave could drown you.
+    float fold = (1.0 - jacobian) / (uFoamReference * max(steepMul, 0.05));
 
     // Calibrated against the measured distribution of fold. The exponent
     // straightens out that distribution's skew, so the slider gives a roughly
@@ -171,6 +364,18 @@ const vertexShader = /* glsl */ `
     // on small swell, which shouldn't be producing whitecaps at all.
     float crest = smoothstep(0.72, 1.0, vHeight) * clamp(uWaveHeight - 0.5, 0.0, 1.0);
     vFoam = max(vFoam, crest * uFoamAmount * 0.7);
+
+    // Whitewater. Past the break the crest isn't a crest any more, it's a
+    // moving pile of aerated water — so this ignores uFoamAmount entirely.
+    // That slider is about whitecaps on open water; a broken wave is white
+    // because it has broken.
+    //
+    // Gated on height within the wave, and that gate is not cosmetic. Painting
+    // the whole broken zone white says the entire inside half of the beach is
+    // whitewater, which is both wrong — the trough between two broken waves is
+    // disturbed, not white — and unplayable: gameplay reads this value, so it
+    // made any turn at all in the surf zone an instant wipeout.
+    vFoam = max(vFoam, shore.z * smoothstep(-0.15, 0.45, vHeight));
 
     vec3 localPosition = vec3(displaced.x - uOffset.x, displaced.y, displaced.z - uOffset.y);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(localPosition, 1.0);
@@ -191,10 +396,14 @@ const fragmentShader = /* glsl */ `
   uniform float uShininess;
   uniform float uFadeDistance;
 
+  uniform vec3 uSandColor;
+  uniform float uShallowDepth;
+
   varying vec3 vWorldPosition;
   varying vec3 vNormal;
   varying float vFoam;
   varying float vHeight;
+  varying float vDepth;
 
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -293,6 +502,14 @@ const fragmentShader = /* glsl */ `
     float facing = clamp(dot(normal, vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
     vec3 water = mix(uDeepColor, uShallowColor, facing * 0.65);
 
+    // Over a shallow bottom you are looking at the sand through the water, not
+    // into the dark. This is most of what makes a beach read as a beach from
+    // out the back: the break line shows up as a band of pale green long before
+    // any foam appears on it. Squared so the sand comes up quickly in the last
+    // couple of metres rather than washing the whole surf zone out.
+    float shallow = 1.0 - smoothstep(0.0, uShallowDepth, vDepth);
+    water = mix(water, uSandColor, shallow * shallow * 0.85);
+
     float scatter = pow(max(dot(viewDir, -sunDir), 0.0), 3.0) * max(vHeight, 0.0);
     water += uScatterColor * scatter * 0.5;
     water *= 0.5 + 0.5 * max(dot(normal, sunDir), 0.0);
@@ -366,6 +583,42 @@ export class Ocean {
     /** Metres of water kept between the deepest possible trough and the backdrop. */
     this.backdropClearance = options.backdropClearance ?? 1.5;
 
+    /**
+     * The beach. Distances are along the swell's direction of travel, which is
+     * the shore normal — waves march straight at the sand, and `shoreLine` is
+     * how far the waterline sits from the origin the run starts at.
+     *
+     * `beachSlope` is what sets the size of the game. The surf zone runs from
+     * the breaking depth to the sand, so a gentler beach is a longer ride: at
+     * 1:80 the wave breaks 578 m out and the rideable part of it lasts about
+     * 44 s at trim speed, which is a long ride by the standards of the real
+     * thing and about right for a 120 s run.
+     */
+    this.shoreLine = options.shoreLine ?? 640;
+    this.beachSlope = options.beachSlope ?? 0.0125;
+    this.deepDepth = options.deepDepth ?? 45;
+    /** How much of the depth a sandbar takes out, and how deep bars reach. */
+    this.barAmount = options.barAmount ?? 0.35;
+    this.barDepth = options.barDepth ?? 10;
+    /** McCowan's breaking limit: a wave can be 0.78 of the depth it stands in. */
+    this.breakerIndex = options.breakerIndex ?? 0.78;
+    /** Dry beach above the waterline — steeper than the bed, as a real berm is. */
+    this.drySlope = options.drySlope ?? 0.06;
+    this.duneHeight = options.duneHeight ?? 9;
+
+    /**
+     * Wave height at which the ride is over, in metres.
+     *
+     * Measured rather than chosen: riding the default beach in on a neutral
+     * input, the board holds the pocket down to about d = 237 m and then loses
+     * it inside four seconds — the face is still there but it can no longer
+     * push a board at the swell's 11 m/s, so the wave overtakes you and the
+     * whitewater has you. The height there is 2.33 m, so 2.4 m ends the wave
+     * one beat before it would collapse on its own, which is a kick-out rather
+     * than a wipeout.
+     */
+    this.rideEndHeight = options.rideEndHeight ?? 2.4;
+
     const lengths = waves.map((wave) => wave.w);
     const shortest = Math.min(...lengths);
     const span = Math.max(...lengths) - shortest;
@@ -400,10 +653,21 @@ export class Ocean {
         uChoppiness: { value: options.choppiness ?? 1 },
         uFoamAmount: { value: options.foamAmount ?? 0.5 },
         uFoamReference: { value: this.waves.reduce((total, w) => total + w.z, 0) || 1 },
-        uSectionAxis: { value: new THREE.Vector2(0, 1) },
-        uSectionStrength: { value: options.sectionStrength ?? 0.7 },
         uBarrelChop: { value: options.barrelChop ?? 2.2 },
         uRippleStrength: { value: options.rippleStrength ?? 1 },
+
+        // --- the beach ---
+        uShoreAxis: { value: new THREE.Vector2(0, 1) },
+        uShoreLine: { value: this.shoreLine },
+        uBeachSlope: { value: this.beachSlope },
+        uDeepDepth: { value: this.deepDepth },
+        uBarAmount: { value: this.barAmount },
+        uBarDepth: { value: this.barDepth },
+        uShoalRefDepth: { value: 1 },
+        uBreakerIndex: { value: this.breakerIndex },
+        uDeepAmplitude: { value: 1 },
+        uShallowDepth: { value: options.shallowDepth ?? 6 },
+        uSandColor: { value: new THREE.Color(options.sandColor ?? 0x9fb08a) },
 
         uSunDirection: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(options.sunColor ?? 0xfff1d6) },
@@ -417,6 +681,19 @@ export class Ocean {
         uFadeDistance: { value: this.size * 0.42 },
       },
     });
+
+    /**
+     * The depth at which the swell starts to feel the bottom, a quarter of the
+     * dominant wavelength — the textbook figure, and it lands in the right place
+     * here: 19.5 m for the 78 m swell, which is well outside the 578 m surf zone,
+     * so the wave is already growing by the time it gets there.
+     *
+     * From the authored wavelength, not the scaled one: which wave is "the
+     * swell" is a property of the wave set, and so is where it starts to shoal.
+     */
+    this._shoalRefDepth = this.dominantWave.w / 4;
+    this.material.uniforms.uShoalRefDepth.value = this._shoalRefDepth;
+    this.material.uniforms.uShoreAxis.value.copy(this.sectionAxis);
 
     this._updateWaveScales();
 
@@ -439,7 +716,60 @@ export class Ocean {
     this.backdrop.position.y = this._backdropDepth;
     this.backdrop.frustumCulled = false;
 
-    this.group.add(this.mesh, this.backdrop);
+    this._buildBeach(options);
+    this.group.add(this.mesh, this.backdrop, this.beach);
+  }
+
+  /**
+   * The sand. A plane authored in the shore's own frame and displaced to the
+   * same bed the water's depth comes from, so the beach and the surf zone are
+   * two views of one surface and cannot disagree about where the sea ends.
+   *
+   * Deliberately static, unlike the water: the beach is a place, and having it
+   * slide along under the camera the way the ocean plane does would be visible
+   * the moment you looked at the bars. It's sized to cover instead — 6 km of
+   * coast is more than a 120 s run can travel along.
+   */
+  _buildBeach(options) {
+    const alongSize = options.beachAlongSize ?? 6000;
+    const crossSize = options.beachCrossSize ?? 1600;
+    // Seaward edge is set past where the water ever gets thin enough to see the
+    // bottom through, so the sand's own far fade is never what ends it.
+    const seawardEdge = options.beachSeawardEdge ?? 700;
+
+    // Cross-shore resolution is what matters: it carries the waterline. 8.3 m
+    // cells there against 62 m along the beach, where the only feature is the
+    // bars and their shortest period is 480 m.
+    const geometry = new THREE.PlaneGeometry(alongSize, crossSize, 96, 192);
+    geometry.rotateX(-Math.PI / 2);
+
+    this.beachMaterial = new THREE.ShaderMaterial({
+      vertexShader: beachVertexShader,
+      fragmentShader: beachFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uShoreAxis: { value: this.material.uniforms.uShoreAxis.value },
+        uShoreLine: { value: this.shoreLine },
+        uBeachSlope: { value: this.beachSlope },
+        uDeepDepth: { value: this.deepDepth },
+        uBarAmount: { value: this.barAmount },
+        uBarDepth: { value: this.barDepth },
+        uDrySlope: { value: this.drySlope },
+        uDuneHeight: { value: this.duneHeight },
+        uCrossSize: { value: crossSize },
+        uSeawardEdge: { value: seawardEdge },
+        uSunDirection: { value: this.material.uniforms.uSunDirection.value },
+        uSunColor: { value: this.material.uniforms.uSunColor.value },
+        uFoamColor: { value: this.material.uniforms.uFoamColor.value },
+        uHorizonColor: { value: this.material.uniforms.uHorizonColor.value },
+        uWetSandColor: { value: new THREE.Color(options.wetSandColor ?? 0x7a6a58) },
+        uDrySandColor: { value: new THREE.Color(options.drySandColor ?? 0xd9c2a0) },
+        uFadeDistance: { value: this.size * 0.42 },
+      },
+    });
+
+    this.beach = new THREE.Mesh(geometry, this.beachMaterial);
+    this.beach.frustumCulled = false;
   }
 
   /** Overall wave amplitude. 0 is a millpond; above ~3 the crests self-intersect. */
@@ -470,6 +800,18 @@ export class Ocean {
       this._waveScales[i] = height >= 1 ? height : height ** this._persistence[i];
     }
 
+    // Deep-water amplitude of the whole sea, which is what the breaking limit is
+    // measured against. It has to follow `waveHeight`: a bigger swell has to
+    // break in deeper water and further out, and that falls out of this one
+    // number rather than needing a second set of tuning.
+    let amplitude = 0;
+    for (let i = 0; i < this.waves.length; i++) {
+      const wave = this.waves[i];
+      amplitude += (wave.z * this._waveScales[i] * wave.w) / TWO_PI;
+    }
+    this._deepAmplitude = Math.max(amplitude, 1e-4);
+    this.material.uniforms.uDeepAmplitude.value = this._deepAmplitude;
+
     this._updateBackdropDepth();
   }
 
@@ -492,15 +834,19 @@ export class Ocean {
    * `horizonColor`, so the step at the seam is between two identical colours.
    */
   _updateBackdropDepth() {
-    const steepCeiling = 1 + this.material.uniforms.uSectionStrength.value;
-
-    let amplitude = 0;
-    for (let i = 0; i < this.waves.length; i++) {
-      const wave = this.waves[i];
-      amplitude += (wave.z * this._waveScales[i] * wave.w) / TWO_PI;
+    // The shoaling gain has no closed-form maximum — it's the crossover between
+    // a rising curve and a falling one, and where they meet moves with
+    // `waveHeight`. Sweeping the depth range is exact enough and only happens
+    // when the swell changes. 0.05 m steps put the sampled peak within 0.1% of
+    // the analytic crossover across the whole 0-3 slider.
+    let ceiling = 1;
+    for (let h = 0.05; h <= this.deepDepth; h += 0.05) {
+      const shoal = Math.max(1, (this._shoalRefDepth / h) ** 0.25);
+      const gain = Math.min(shoal, (this.breakerIndex * h) / (2 * this._deepAmplitude));
+      if (gain > ceiling) ceiling = gain;
     }
 
-    this._backdropDepth = -(amplitude * steepCeiling + this.backdropClearance);
+    this._backdropDepth = -(this._deepAmplitude * ceiling + this.backdropClearance);
   }
 
   /**
@@ -579,43 +925,82 @@ export class Ocean {
       const wave = this.dominantWave;
       const length = Math.hypot(wave.x, wave.y) || 1;
       this._axis = new THREE.Vector2(wave.x / length, wave.y / length);
-      this.material.uniforms.uSectionAxis.value.copy(this._axis);
     }
     return this._axis;
   }
 
   /**
-   * The wave's character at a point: how steep it is here, and whether it's
-   * throwing a barrel.
+   * Still-water depth at a world position, in metres. 0 at the waterline.
    *
-   * MUST stay identical to sectionProfile() in the vertex shader. Gameplay
-   * reads this copy to decide where barrels are and how the board behaves;
-   * if the two drift apart the player rides a barrel that isn't drawn.
+   * MUST stay identical to shoreDepth() in SHORE_GLSL, including the hand-rolled
+   * tanh — `Math.tanh` is not guaranteed to agree with `(1-e)/(1+e)` to the last
+   * bit, and this value decides where the board is allowed to be.
    */
-  sampleSection(x, z, target = { steep: 1, barrel: 0 }) {
+  depthAt(x, z) {
     const axis = this.sectionAxis;
-    const s = x * axis.x + z * axis.y;
+    const d = this.shoreLine - (x * axis.x + z * axis.y);
 
-    const n1 =
-      Math.sin(s * 0.052 + 1.7) * 0.5 +
-      Math.sin(s * 0.105 + 4.2) * 0.33 +
-      Math.sin(s * 0.14 + 0.9) * 0.17;
-    const n2 = Math.sin(s * 0.074 + 2.4) * 0.55 + Math.sin(s * 0.131 + 5.1) * 0.45;
+    const e = Math.exp(-2 * Math.max((d * this.beachSlope) / this.deepDepth, 0));
+    let h = this.deepDepth * ((1 - e) / (1 + e));
 
-    const barrel = THREE.MathUtils.smoothstep(n2, 0.35, 0.85);
+    const t = x * -axis.y + z * axis.x;
+    const bar = Math.sin(t * 0.0131 + 2.4) * 0.55 + Math.sin(t * 0.0074 + 5.1) * 0.45;
+    h *= 1 - this.barAmount * bar * Math.exp(-h / this.barDepth);
 
-    target.barrel = barrel;
-    target.steep = 1 + this.sectionStrength * (0.45 * n1 + 0.55 * barrel);
+    return Math.max(h, 0);
+  }
+
+  /** Metres of water between the waterline and a point. Negative up the sand. */
+  shoreDistance(x, z) {
+    const axis = this.sectionAxis;
+    return this.shoreLine - (x * axis.x + z * axis.y);
+  }
+
+  /**
+   * Bed elevation relative to still water — negative offshore, positive up the
+   * dry beach. The dry side is steeper than the bed and flattens into dunes,
+   * which is the shape a real berm has; the kink at the waterline is real too.
+   */
+  bedHeight(x, z) {
+    const d = this.shoreDistance(x, z);
+    if (d >= 0) return -this.depthAt(x, z);
+
+    const e = Math.exp(-2 * ((-d * this.drySlope) / this.duneHeight));
+    return this.duneHeight * ((1 - e) / (1 + e));
+  }
+
+  /**
+   * The wave's character at a point: how much the shoaling bottom has grown it,
+   * whether it's throwing a barrel, and how far past breaking it is.
+   *
+   * MUST stay identical to shoreProfile() in SHORE_GLSL. Gameplay reads this
+   * copy to decide where barrels and whitewater are; if the two drift apart the
+   * player rides a barrel that isn't drawn, or drowns in clean water.
+   */
+  sampleSection(x, z, target = { steep: 1, barrel: 0, white: 0, depth: 0 }) {
+    const h = this.depthAt(x, z);
+
+    const shoal = Math.max(1, (this._shoalRefDepth / Math.max(h, 0.05)) ** 0.25);
+    const limit = (this.breakerIndex * h) / (2 * this._deepAmplitude);
+    const b = shoal / Math.max(limit, 1e-4);
+
+    target.depth = h;
+    target.steep = Math.min(shoal, limit);
+    target.barrel =
+      THREE.MathUtils.smoothstep(b, 1.02, 1.14) * (1 - THREE.MathUtils.smoothstep(b, 1.32, 1.58));
+    target.white = THREE.MathUtils.smoothstep(b, 1.15, 2.0);
 
     return target;
   }
 
-  get sectionStrength() {
-    return this.material.uniforms.uSectionStrength.value;
-  }
-
-  set sectionStrength(value) {
-    this.material.uniforms.uSectionStrength.value = Math.max(0, value);
+  /**
+   * Wave height (crest to trough) the beach can support at a point. This is what
+   * "the wave" means once it's breaking — past the limit it is only ever as big
+   * as the water is deep, so it thins out to nothing at the sand, and that decay
+   * is what ends a ride.
+   */
+  waveHeightAt(x, z) {
+    return 2 * this._deepAmplitude * this.sampleSection(x, z, this._section).steep;
   }
 
   get barrelChop() {
@@ -715,14 +1100,24 @@ export class Ocean {
     target.slopeX = slopeX;
     target.slopeZ = slopeZ;
 
+    // Shoaling divided back out — see the long note in the vertex shader, which
+    // does the same thing for the same reason.
     const fold =
       (1 - (tangentX * binormalZ - tangentZ * binormalX)) /
-      this.material.uniforms.uFoamReference.value;
+      (this.material.uniforms.uFoamReference.value * Math.max(section.steep, 0.05));
     const relativeHeight = THREE.MathUtils.clamp(height / Math.max(totalAmplitude, 0.001), -1, 1);
 
-    target.foam = this._foamAt(fold, relativeHeight, waveHeight);
+    // Whitewater wins outright over the whitecap term — see the note in the
+    // vertex shader, which does the same thing with the same value, including
+    // the gate on height within the wave.
+    target.foam = Math.max(
+      this._foamAt(fold, relativeHeight, waveHeight),
+      section.white * THREE.MathUtils.smoothstep(relativeHeight, -0.15, 0.45),
+    );
     target.barrel = section.barrel;
     target.steep = section.steep;
+    target.white = section.white;
+    target.depth = section.depth;
 
     return target;
   }
@@ -808,6 +1203,9 @@ export class Ocean {
     // new phase the instant the speed changed.
     this._waveTime += delta * this.waveSpeed;
     this.material.uniforms.uTime.value = this._waveTime;
+    // Same clock, so the swash on the sand keeps step with the surf that feeds
+    // it — and so a paused game stops the waterline moving too.
+    this.beachMaterial.uniforms.uTime.value = this._waveTime;
 
     if (focus) {
       // Snap to the vertex grid: sliding by whole quads keeps the wave

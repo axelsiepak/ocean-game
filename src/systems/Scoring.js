@@ -50,6 +50,13 @@ export class Scoring {
     /** One-off bonus the first time a trick appears in a combo. */
     this.varietyBonus = options.varietyBonus ?? 75;
     this.maxMultiplier = options.maxMultiplier ?? 10;
+    /**
+     * Points per second of a wave ridden all the way to the inside, paid as a
+     * lump when it closes out. Riding already pays 12/s as you go; this is the
+     * bonus for staying with it to the end rather than kicking out early, so
+     * it's deliberately worth about as much again.
+     */
+    this.completionRate = options.completionRate ?? 10;
 
     this.score = 0;
     this.combo = 0;
@@ -65,6 +72,10 @@ export class Scoring {
     this.bestTrick = null;
     this.tricksLanded = 0;
     this.wipeouts = 0;
+    /** Waves ridden through to the inside, for the run summary. */
+    this.wavesRidden = 0;
+    /** Longest single wave, in seconds. */
+    this.longestWave = 0;
 
     this._timer = 0;
   }
@@ -110,6 +121,21 @@ export class Scoring {
     return points;
   }
 
+  /**
+   * Call when a wave has been ridden to the inside and closed out.
+   *
+   * Deliberately leaves the combo alone. You didn't fall off — the wave ran out
+   * of water, which is the one way a ride is supposed to end, and taking the
+   * multiplier for it would punish the thing the game is asking for.
+   */
+  completeWave(seconds) {
+    const points = Math.round(seconds * this.completionRate * this.multiplier);
+    this.score += points;
+    this.wavesRidden += 1;
+    this.longestWave = Math.max(this.longestWave, seconds);
+    return points;
+  }
+
   /** Call on a wipeout. The multiplier is the thing you actually lose. */
   drop(counts = false) {
     if (counts) this.wipeouts += 1;
@@ -145,6 +171,8 @@ export class Scoring {
       tricksLanded: this.tricksLanded,
       barrelTime: this.barrelTime,
       wipeouts: this.wipeouts,
+      wavesRidden: this.wavesRidden,
+      longestWave: this.longestWave,
     };
   }
 
@@ -155,6 +183,8 @@ export class Scoring {
     this.bestTrick = null;
     this.tricksLanded = 0;
     this.wipeouts = 0;
+    this.wavesRidden = 0;
+    this.longestWave = 0;
     this.drop();
   }
 }

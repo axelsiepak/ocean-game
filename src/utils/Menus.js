@@ -153,6 +153,8 @@ export class Menus {
       this._stat('Longest combo', results?.bestCombo ? `${results.bestCombo} tricks` : '—'),
       this._stat('Tricks landed', String(results?.tricksLanded ?? 0)),
       this._stat('Barrel time', `${(results?.barrelTime ?? 0).toFixed(1)}s`),
+      this._stat('Waves ridden', String(results?.wavesRidden ?? 0)),
+      this._stat('Longest wave', `${(results?.longestWave ?? 0).toFixed(1)}s`),
       this._stat('Wipeouts', String(results?.wipeouts ?? 0)),
     );
     this._stats.hidden = false;

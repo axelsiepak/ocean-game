@@ -68,8 +68,26 @@ export class MainScene {
       horizonColor: 0xe8a878,
       foamColor: 0xffeadb,
       sunColor: 0xffb070,
+      // Sand under a low sun: warm and fairly dark, because almost none of what
+      // you see of a beach at sunset is the sand's own colour. The wet strip is
+      // the same pigment soaked, so it's the dry tone taken down rather than a
+      // separate hue.
+      drySandColor: 0xc9a074,
+      wetSandColor: 0x6b5341,
+      // What the water looks like over a shallow bottom. Green rather than the
+      // open sea's blue: this is sand seen through a couple of metres of water,
+      // and it's what marks the break line out from a long way off.
+      sandColor: 0x86a071,
     });
     this.surfboard = new Surfboard({ input: this.input, ocean: this.ocean });
+
+    /** Metres down the beach between one wave's take-off spot and the next. */
+    this.lineupStep = 173;
+    /** Kept inside the beach mesh, which is 6 km of coast. */
+    this.lineupSpan = 4000;
+    this._wavesTaken = 0;
+    this._waveStarted = 0;
+    this._runTime = 0;
 
     // The boat keeps its old job minus the controls: anchored scenery, and a
     // useful sense of scale next to a 2 m board.
@@ -200,11 +218,61 @@ export class MainScene {
    * every restart, which is a visible stall for no benefit.
    */
   reset() {
+    this._wavesTaken = 0;
+    this._runTime = 0;
+    this._toLineup(0, 0);
+
+    // Restart the swell too, so every run meets the same sequence of steep
+    // sections and barrels from the same starting point.
+    this.ocean._waveTime = 0;
+
+    this.scoring.reset();
+    this.spray.clear();
+    this.input.clear();
+    this.cameraRig.reset();
+  }
+
+  /**
+   * Puts the board back out the back, ready for the next wave.
+   *
+   * The along-shore offset is what makes one wave different from the next: the
+   * sandbars are fixed in the world, so moving down the beach means the wave
+   * breaks over a different part of them. 173 m a wave is deliberately not a
+   * neat fraction of either bar period (480 m and 849 m), so the peaks don't
+   * come back round on a short cycle — measured over 20 waves the break point
+   * ranges 468-664 m out with no repeat.
+   *
+   * Nothing here is random. Runs have to be reproducible frame for frame for
+   * any of the tuning to be measurable, so the lineup walks a fixed path.
+   */
+  _toLineup(waveIndex, elapsed) {
+    const board = this.surfboard;
+    const axis = this.ocean.sectionAxis;
+    // Wrapped so a long free-surf session can't walk off the end of the sand.
+    const along =
+      (((waveIndex * this.lineupStep) % this.lineupSpan) + this.lineupSpan) % this.lineupSpan -
+      this.lineupSpan / 2;
+
+    // The lineup sits at the run's origin, offset along the beach — which is
+    // `shoreLine` metres of water, just outside where the swell starts to break.
+    board.position.set(-axis.y * along, 0, axis.x * along);
+    board.velocity.set(0, 0);
+    board.heading = Math.atan2(axis.x, axis.y);
+    this._waveStarted = elapsed;
+
+    this._clearBoardState();
+
+    // Seat the board on the water directly rather than running an update to do
+    // it. A whole update would advance the board a frame before the run has
+    // begun, and the wave coupling is chaotic enough that the frame is the
+    // difference between two runs matching and drifting apart entirely.
+    board.position.y =
+      this.ocean.sampleHeight(board.position.x, board.position.z) + board.rideHeight;
+  }
+
+  _clearBoardState() {
     const board = this.surfboard;
 
-    board.position.set(0, 0, 0);
-    board.velocity.set(0, 0);
-    board.heading = Math.atan2(this.ocean.sectionAxis.x, this.ocean.sectionAxis.y);
     board.wipeout = 0;
     board.wipeoutReason = null;
     board.riding = false;
@@ -223,20 +291,26 @@ export class MainScene {
     board._trickYaw = 0;
     board._trickPitch = 0;
     board._trickRoll = 0;
+  }
 
-    // Restart the swell too, so every run meets the same sequence of steep
-    // sections and barrels from the same starting point.
-    this.ocean._waveTime = 0;
+  /**
+   * The wave has run out of water. That ends the ride, not the run — you kick
+   * out over the back and paddle out for the next one.
+   *
+   * Tested on wave height rather than on depth so it follows the swell: a
+   * bigger swell breaks further out and dies further out too, and both fall out
+   * of the one breaking limit rather than needing their own thresholds.
+   */
+  _closeOutWave(elapsed) {
+    const ridden = elapsed - this._waveStarted;
 
-    this.scoring.reset();
-    this.spray.clear();
-    this.input.clear();
+    this.scoring.completeWave(ridden);
+    this.spray.burst(this.surfboard.position, 1.1);
+    this.audio.splash(0.9);
 
-    // Seat the board on the water directly rather than running an update to do
-    // it. A whole update would advance the board a frame before the run has
-    // begun, and the wave coupling is chaotic enough that the frame is the
-    // difference between two runs matching and drifting apart entirely.
-    board.position.y = this.ocean.sampleHeight(0, 0) + board.rideHeight;
+    this._wavesTaken += 1;
+    this._toLineup(this._wavesTaken, elapsed);
+    // A teleport down the beach is not something to ease the camera through.
     this.cameraRig.reset();
   }
 
@@ -275,6 +349,7 @@ export class MainScene {
    */
   update(delta, elapsed) {
     const focus = this.surfboard.position;
+    this._runTime += delta;
 
     this.ocean.update(delta, elapsed, focus);
     this.surfboard.update(delta, elapsed);
@@ -314,6 +389,13 @@ export class MainScene {
     this.scoring.update(delta, this.surfboard);
     this.audio.update(delta, this.surfboard);
     this.hud.update(this.surfboard, this.scoring, this.audio);
+
+    // Last, so every system above has already seen the board where the wave
+    // actually ended. Teleporting mid-update would drag the wake spray across
+    // the beach and hand the camera a pose from the wrong end of the coast.
+    if (this.ocean.waveHeightAt(focus.x, focus.z) < this.ocean.rideEndHeight) {
+      this._closeOutWave(this._runTime);
+    }
   }
 
   dispose() {
